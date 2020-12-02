@@ -1,0 +1,91 @@
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number: 14932025050880488804 (0xcf3935aba6f73564)
+    Signature Algorithm: sha256WithRSAEncryption
+        Issuer: C=CH, ST=ZH, L=Zurich, O=SUSE, OU=CH, CN=bjsuma.bo2go.home
+        Validity
+            Not Before: Dec 16 18:21:24 2016 GMT
+            Not After : Dec 14 18:21:24 2026 GMT
+        Subject: C=CH, ST=ZH, L=Zurich, O=SUSE, OU=CH, CN=bjsuma.bo2go.home
+        Subject Public Key Info:
+            Public Key Algorithm: rsaEncryption
+                Public-Key: (2048 bit)
+                Modulus:
+                    00:c5:35:d1:94:6f:22:70:43:fd:71:23:2b:9d:d5:
+                    75:1f:89:54:c8:17:32:1a:7b:e5:4e:b8:74:0f:0f:
+                    dc:23:42:f1:da:e1:f5:7c:dc:c2:f8:b1:d3:8e:5a:
+                    c7:18:3d:1f:d6:c2:8e:63:2d:53:a8:70:9a:09:bc:
+                    34:16:fc:31:45:4c:85:e8:00:ff:ef:c0:97:c8:c7:
+                    dc:67:2b:c8:c6:01:e8:18:eb:ee:b3:78:d6:de:60:
+                    a5:55:b1:9e:af:13:1b:bd:d7:cb:1b:e5:4b:bf:a5:
+                    67:4c:6a:ca:e4:96:03:19:80:61:fc:aa:9e:10:f4:
+                    f6:7e:78:f8:0b:48:73:16:04:4b:e5:e2:5e:80:74:
+                    22:f7:b6:4d:88:4c:1f:12:0b:71:c1:30:35:fc:d7:
+                    a5:0c:fe:32:5d:8c:19:b8:9b:34:cf:78:36:f8:a6:
+                    52:15:c1:94:0e:46:ee:25:74:3c:ca:7e:24:83:b7:
+                    61:f7:75:00:10:13:8f:14:e0:5a:11:b7:ec:1b:f4:
+                    4d:b6:d4:2c:c6:6e:86:3d:b5:51:17:d7:02:54:04:
+                    28:22:4a:0f:65:7f:96:6e:ec:eb:9d:59:c5:f2:9a:
+                    44:62:3d:47:a2:e1:84:4b:7e:6e:b6:b6:3a:a2:7b:
+                    b8:ac:d7:2d:ab:34:93:fb:44:cb:8d:76:42:ca:f4:
+                    aa:69
+                Exponent: 65537 (0x10001)
+        X509v3 extensions:
+            X509v3 Basic Constraints: 
+                CA:TRUE
+            X509v3 Key Usage: 
+                Digital Signature, Key Encipherment, Certificate Sign
+            X509v3 Extended Key Usage: 
+                TLS Web Server Authentication, TLS Web Client Authentication
+            Netscape Comment: 
+                RHN SSL Tool Generated Certificate
+            X509v3 Subject Key Identifier: 
+                0E:08:26:7F:D4:8B:ED:38:AD:2C:5F:06:15:E2:E6:36:64:66:10:03
+            X509v3 Authority Key Identifier: 
+                keyid:0E:08:26:7F:D4:8B:ED:38:AD:2C:5F:06:15:E2:E6:36:64:66:10:03
+                DirName:/C=CH/ST=ZH/L=Zurich/O=SUSE/OU=CH/CN=bjsuma.bo2go.home
+                serial:CF:39:35:AB:A6:F7:35:64
+
+    Signature Algorithm: sha256WithRSAEncryption
+         86:18:d2:5c:38:40:da:a2:d6:9d:00:1a:6a:73:cf:1d:a8:82:
+         e8:27:df:35:29:98:55:e8:57:bd:24:b8:2f:4c:b7:db:48:77:
+         3e:31:98:3b:02:80:3a:bf:df:29:f8:25:32:35:77:71:ed:19:
+         fb:bd:25:ef:d8:69:75:8d:3d:0f:2e:11:07:8e:74:6c:c5:67:
+         2f:a8:ac:f5:4d:e2:8b:c3:2e:09:bd:8e:8f:d9:9a:ca:0d:f1:
+         46:e7:46:a4:de:18:2b:96:45:66:79:49:4f:04:2f:20:a9:b4:
+         80:11:80:0c:fb:ff:7a:c8:85:b2:d9:f1:c0:1c:f8:e1:05:f3:
+         be:07:22:47:a8:be:20:30:82:11:aa:a8:36:33:92:fd:19:91:
+         dc:8f:d8:33:79:a1:2c:e2:e1:dc:12:81:ec:19:35:e4:75:16:
+         12:1b:ed:c4:cb:df:d8:d0:7b:bf:82:1e:f4:1a:8d:fa:00:2d:
+         8c:df:24:3f:50:f3:98:83:85:42:7b:e1:d6:69:f7:b8:d8:fa:
+         97:20:c8:d6:e7:f1:34:a0:d1:55:2e:d0:a5:cb:b3:45:2a:48:
+         0f:ef:61:e6:0c:2d:0c:a0:3a:60:2b:2b:a0:e3:f8:b6:75:ce:
+         56:b3:23:21:e9:1d:87:db:30:22:59:e2:e5:bd:be:33:62:15:
+         5b:49:48:cd
+-----BEGIN CERTIFICATE-----
+MIIEczCCA1ugAwIBAgIJAM85Naum9zVkMA0GCSqGSIb3DQEBCwUAMGMxCzAJBgNV
+BAYTAkNIMQswCQYDVQQIDAJaSDEPMA0GA1UEBwwGWnVyaWNoMQ0wCwYDVQQKDART
+VVNFMQswCQYDVQQLDAJDSDEaMBgGA1UEAwwRYmpzdW1hLmJvMmdvLmhvbWUwHhcN
+MTYxMjE2MTgyMTI0WhcNMjYxMjE0MTgyMTI0WjBjMQswCQYDVQQGEwJDSDELMAkG
+A1UECAwCWkgxDzANBgNVBAcMBlp1cmljaDENMAsGA1UECgwEU1VTRTELMAkGA1UE
+CwwCQ0gxGjAYBgNVBAMMEWJqc3VtYS5ibzJnby5ob21lMIIBIjANBgkqhkiG9w0B
+AQEFAAOCAQ8AMIIBCgKCAQEAxTXRlG8icEP9cSMrndV1H4lUyBcyGnvlTrh0Dw/c
+I0Lx2uH1fNzC+LHTjlrHGD0f1sKOYy1TqHCaCbw0FvwxRUyF6AD/78CXyMfcZyvI
+xgHoGOvus3jW3mClVbGerxMbvdfLG+VLv6VnTGrK5JYDGYBh/KqeEPT2fnj4C0hz
+FgRL5eJegHQi97ZNiEwfEgtxwTA1/NelDP4yXYwZuJs0z3g2+KZSFcGUDkbuJXQ8
+yn4kg7dh93UAEBOPFOBaEbfsG/RNttQsxm6GPbVRF9cCVAQoIkoPZX+WbuzrnVnF
+8ppEYj1HouGES35utrY6onu4rNctqzST+0TLjXZCyvSqaQIDAQABo4IBKDCCASQw
+DAYDVR0TBAUwAwEB/zALBgNVHQ8EBAMCAqQwHQYDVR0lBBYwFAYIKwYBBQUHAwEG
+CCsGAQUFBwMCMDEGCWCGSAGG+EIBDQQkFiJSSE4gU1NMIFRvb2wgR2VuZXJhdGVk
+IENlcnRpZmljYXRlMB0GA1UdDgQWBBQOCCZ/1IvtOK0sXwYV4uY2ZGYQAzCBlQYD
+VR0jBIGNMIGKgBQOCCZ/1IvtOK0sXwYV4uY2ZGYQA6FnpGUwYzELMAkGA1UEBhMC
+Q0gxCzAJBgNVBAgMAlpIMQ8wDQYDVQQHDAZadXJpY2gxDTALBgNVBAoMBFNVU0Ux
+CzAJBgNVBAsMAkNIMRowGAYDVQQDDBFianN1bWEuYm8yZ28uaG9tZYIJAM85Naum
+9zVkMA0GCSqGSIb3DQEBCwUAA4IBAQCGGNJcOEDaotadABpqc88dqILoJ981KZhV
+6Fe9JLgvTLfbSHc+MZg7AoA6v98p+CUyNXdx7Rn7vSXv2Gl1jT0PLhEHjnRsxWcv
+qKz1TeKLwy4JvY6P2ZrKDfFG50ak3hgrlkVmeUlPBC8gqbSAEYAM+/96yIWy2fHA
+HPjhBfO+ByJHqL4gMIIRqqg2M5L9GZHcj9gzeaEs4uHcEoHsGTXkdRYSG+3Ey9/Y
+0Hu/gh70Go36AC2M3yQ/UPOYg4VCe+HWafe42PqXIMjW5/E0oNFVLtCly7NFKkgP
+72HmDC0MoDpgKyug4/i2dc5WsyMh6R2H2zAiWeLlvb4zYhVbSUjN
+-----END CERTIFICATE-----

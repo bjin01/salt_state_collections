@@ -1,0 +1,18 @@
+{% set repo = salt['grains.filter_by']({
+    'SUSE Linux Enterprise Server 12 SP1': {
+        'name':   'OPENSUSE_Leap_42.1',
+        'repofile': '/etc/zypp/repos.d/opensuseleap42-1.repo',
+        'repourl': 'http://download.opensuse.org/distribution/leap/42.1/repo/oss/',
+        'repo_gpgcheck': '0',
+        'pkg_gpgcheck': '0',
+    },
+    'SUSE Linux Enterprise Server 12 SP2': {
+        'name':   'OPENSUSE_Leap_42.2',
+        'repofile': '/etc/zypp/repos.d/opensuseleap42-2.repo',
+        'repourl': 'http://download.opensuse.org/distribution/leap/42.2/repo/oss/',
+        'repo_gpgcheck': '0',
+        'pkg_gpgcheck': '0',
+    },
+}
+ , grain="oscodename"
+ , merge=salt['pillar.get']('mydemo')) %}

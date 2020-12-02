@@ -1,0 +1,10 @@
+{% from "myrepos/map.jinja" import repo with context %}
+
+[{{ repo.name}}]
+enabled=1
+autorefresh=0
+baseurl={{ repo.repourl }}
+type=yast2
+gpgcheck=0
+repo_gpgcheck={{ repo.repo_gpgcheck }}
+pkg_gpgcheck={{ repo.pkg_gpgcheck }}

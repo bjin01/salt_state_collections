@@ -1,0 +1,5 @@
+sapmsX11        3690/tcp           # SAP System Message Server Port
+sapgw32          3332/tcp           # SAP System Gateway Port
+sapdp22s         4722/tcp           # SAP System Dispatcher Security Port
+sapgw91s         4891/tcp           # SAP System Gateway Security Port
+sapmsT11        3601/tcp        # R3
