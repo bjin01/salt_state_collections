@@ -1,0 +1,27 @@
+{% set hostfqdn = salt['grains.get']('fqdn') %}
+{% set HOSTFQDN = hostfqdn|upper %}
+{% set sid = salt['pillar.get']('nfs:' + hostfqdn + ':sid') %}
+{% set type = salt['pillar.get']('nfs:' + hostfqdn + ':type') %}
+
+{% set mynfs = salt['pillar.filter_by']({
+    'appl': {
+       '/usr/sap/trans': salt['pillar.get']('nfsservers:server1') + ':/sap_' + sid + '/trans',
+       '/sapmnt/' + HOSTFQDN: salt['pillar.get']('nfsservers:server1') + ':/sap_' + sid + '/sapmnt',
+       '/usr/sap/' + HOSTFQDN: salt['pillar.get']('nfsservers:server1') + ':/sap_' + sid + '/usr_sap/as1', 
+       '/home/' + sid + 'adm': salt['pillar.get']('nfsservers:server1') + ':/sap_' + sid + '/home/as1',
+    },
+    'db': {
+       '/hana/data/' + HOSTFQDN + '/mnt00001': salt['pillar.get']('nfsservers:server1') + ':/sap_' + sid + '_data',
+       '/hana/log/' + HOSTFQDN + '/mnt00001': salt['pillar.get']('nfsservers:server2') + ':/sap_' + sid + '_log',
+       '/usr/sap/' + HOSTFQDN: salt['pillar.get']('nfsservers:server1') + ':/sap_' + sid + '_usr_sap', 
+       '/hana/shared/' + HOSTFQDN: salt['pillar.get']('nfsservers:server1') + ':/sap_' + sid + '_shared',
+    },
+    'test': {
+       '/mnt/test1': salt['pillar.get']('nfsservers:server3') + ':/nfssap/test_' + sid,
+       '/mnt/test2': salt['pillar.get']('nfsservers:server3') + ':/nfssap/test_' + sid,
+       '/mnt/test_1': salt['pillar.get']('nfsservers:server3') + ':/nfssap/test_' + sid,
+    },
+  }, 
+  pillar='nfs:' + hostfqdn + ':type',
+  merge=salt['pillar.get']('nfs:' + hostfqdn + ':' + type)) 
+%}
