@@ -1,0 +1,11 @@
+{% set hostfqdn = salt['grains.get']('fqdn') %}
+{% set HOSTFQDN = hostfqdn|upper %}
+{% set sid = salt['pillar.get']('nfs:' + hostfqdn + ':sid') %}
+{% set type = salt['pillar.get']('nfs:' + hostfqdn + ':type') %}
+{% set nfsserver = salt['pillar.get']('nfsservers:server1') %}
+{% set nfsserverlog = salt['pillar.get']('nfsservers:server2') %}
+db: 
+  /hana/data/{{ HOSTFQDN }}/mnt00001: {{ nfsserver }}:/sap_{{ sid }}_data
+  /hana/log/{{ HOSTFQDN }}/mnt00001: {{ nfsserver }}:/sap_{{ sid }}_log
+  /usr/sap/{{ HOSTFQDN }}: {{ nfsserver }}:/sap_{{ sid }}_usr_sap 
+  /hana/shared/{{ HOSTFQDN }}: {{ nfsserver }}:/sap_{{ sid }}_shared

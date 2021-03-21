@@ -1,0 +1,7 @@
+{% set hostfqdn = salt['grains.get']('fqdn') %}
+{% set HOSTFQDN = hostfqdn|upper %}
+{% set sid = salt['pillar.get']('nfs:' + hostfqdn + ':sid') %}
+{% set type = salt['pillar.get']('nfs:' + hostfqdn + ':type') %}
+{% set nfsserver = salt['pillar.get']('nfsservers:server3') %}
+test: 
+  /mnt/test1: {{ nfsserver }}:/nfssap/test_{{ sid }}

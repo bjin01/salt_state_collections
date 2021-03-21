@@ -5,13 +5,9 @@ nfs_{{ h }}:
   mount.mounted:
     - name: {{ h }}
     - device: {{ i }}
-    - fstype: nfs
-    - opts: "rw,vers=4,minorversion=1,hard,timeo=600,rsize=1048576,wsize=1048576,bg,noatime,lock"
-    - mkmnt: True
-    - persist: True
+    - fstype: {{ salt['pillar.get']('nfssettings:fstype', 'nfs') }}
+    - opts: {{ salt['pillar.get']('nfssettings:mntoptions') }}
+    - mkmnt: {{ salt['pillar.get']('nfssettings:create_mount', True) }}
+    - persist: {{ salt['pillar.get']('nfssettings:fstab', True) }} 
 {% endfor %}
 {% endif %}
-
-
-
-
