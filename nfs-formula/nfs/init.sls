@@ -10,4 +10,8 @@ nfs_{{ h }}:
     - mkmnt: {{ salt['pillar.get']('nfssettings:create_mount', True) }}
     - persist: {{ salt['pillar.get']('nfssettings:fstab', True) }} 
 {% endfor %}
+{% else %}
+nfs_nothing_todo:
+  cmd.run:
+    - name: echo "nothing to do, no nfs pillar for this {{ grains.fqdn }} defined."
 {% endif %}
