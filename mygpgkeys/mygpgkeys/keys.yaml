@@ -1,0 +1,9 @@
+RedHat:
+  centos: centos7-gpg-pubkey-f4a80eb5.key 
+  expanded-support: res-gpg-pubkey-0182b964.key
+  suse-pkg: sle12-gpg-pubkey-39db7c82.key
+Suse:
+  packagehub: packagehub-gpg-pubkey-65176565.key
+  suse-pkg: sle12-gpg-pubkey-39db7c82.key
+  ptf-key: ptf-gpg-pubkey-b37b98a9.key
+

@@ -1,0 +1,9 @@
+{% import_yaml "mygpgkeys/keys.yaml" as mykeys %}
+
+{% set mygpg = salt['grains.filter_by'](
+     mykeys,
+     grain='os_family',
+     merge = salt['pillar.get']('mygpgkeys', {}),
+     )
+%}
+
