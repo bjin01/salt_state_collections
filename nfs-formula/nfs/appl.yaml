@@ -1,8 +1,23 @@
+{% set data = [] %}
+{% set shared = [] %}
 {% set hostfqdn = salt['grains.get']('fqdn') %}
 {% set HOSTFQDN = hostfqdn|upper %}
 {% set sid = salt['pillar.get']('nfs:' + hostfqdn + ':sid') %}
 {% set type = salt['pillar.get']('nfs:' + hostfqdn + ':type') %}
 {% set nfsserver = salt['pillar.get']('nfsservers:server1') %}
+
+{% for h, i in salt['pillar.get']('nas_ip').items() %}
+{% if "_" + sid + "_data" in h %}
+{% do data.append(i) %}
+{% endif %}
+{% endfor %}
+
+{% for h, i in salt['pillar.get']('nas_ip').items() %}
+{% if "_" + sid + "_shared" in h %}
+{% do shared.append(i) %}
+{% endif %}
+{% endfor %}
+
 appl: 
   /usr/sap/trans: {{ nfsserver }}:/sap_{{ sid }}/trans
   /sapmnt/{{ HOSTFQDN }}: {{ nfsserver }}:/sap_{{ sid }}/sapmnt
