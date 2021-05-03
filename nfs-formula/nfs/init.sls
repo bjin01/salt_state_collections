@@ -4,7 +4,7 @@
 {% if "error" in i %}
 failure_nofound_{{ h }}:
   test.fail_without_changes:
-    - name: "No matching nfs ip found in  pillar for this {{ grains.fqdn }} host."
+    - name: "No matching nfs ip found in  pillar for this {{ grains.fqdn }} {{ h }} {{ i }} host."
     - failhard: True
 {% else %}
 nfs_{{ h }}:

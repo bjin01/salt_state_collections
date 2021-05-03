@@ -1,10 +1,18 @@
 nfs:
   rancher-1.bo2go.home:
-    type: test 
-    sid: abc
+    type: appl
+    sid: had 
+    repl: False
   rancher-2.bo2go.home:
-    type: test
+    type: db
     sid: xyz
+    repl: True 
+    role: sec
+  rancher-3.bo2go.home:
+    type: db
+    sid: xyz
+    repl: True 
+    role: prim
 
 nfssettings:
   fstype: nfs

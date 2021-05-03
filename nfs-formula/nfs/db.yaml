@@ -1,27 +1,62 @@
 {% set data = [] %}
 {% set shared = [] %}
+{% set sapmnt = [] %}
+{% set log = [] %}
 
 {% set hostfqdn = salt['grains.get']('fqdn') %}
-{% set HOSTFQDN = hostfqdn|upper %}
 {% set sid = salt['pillar.get']('nfs:' + hostfqdn + ':sid') %}
 {% set type = salt['pillar.get']('nfs:' + hostfqdn + ':type') %}
-{% set nfsserver = salt['pillar.get']('nfsservers:server1') %}
-{% set nfsserverlog = salt['pillar.get']('nfsservers:server2') %}
+{% set sr_repl = salt['pillar.get']('nfs:' + hostfqdn + ':repl', default=False) %}
 
+{% if not sr_repl %}
 {% for h, i in salt['pillar.get']('nas_ip').items() %}
-{% if "_" + sid + "_data" in h %}
+{% if '_' + sid + '_data' in h %}
 {% do data.append(i) %}
 {% endif %} 
 {% endfor %}
 
 {% for h, i in salt['pillar.get']('nas_ip').items() %}
-{% if "_" + sid + "_shared" in h %}
+{% if '_' + sid + '_shared' in h %}
 {% do shared.append(i) %}
 {% endif %}
 {% endfor %}
 
-db: 
-  /hana/data/{{ HOSTFQDN }}/mnt00001: {{ data[0]|default("error", False) }}:/sap_{{ sid }}_data
-  /hana/log/{{ HOSTFQDN }}/mnt00001: {{ nfsserver }}:/sap_{{ sid }}_log
-  /usr/sap/{{ HOSTFQDN }}: {{ nfsserver }}:/sap_{{ sid }}_usr_sap 
-  /hana/shared/{{ HOSTFQDN }}: {{ shared[0]|default("error", False) }}:/sap_{{ sid }}_shared
+{% for h, i in salt['pillar.get']('nas_ip').items() %}
+{% if '_' + sid + '_log' in h %}
+{% do log.append(i) %}
+{% endif %}
+{% endfor %}
+
+db:
+  /hana/data/{{ sid|upper }}/mnt00002: {{ data[0]|default("error", False) }}:/{{ sid }}_data
+  /hana/log/{{ sid|upper }}/mnt00001: {{ log[0]|default("error", False) }}:/{{ sid }}_log
+  /usr/sap/{{ sid|upper }}: {{ shared[0]|default("error", False) }}:/{{ sid }}_shared/usr_sap
+  /hana/shared/{{ sid|upper }}: {{ shared[0]|default("error", False) }}:/{{ sid }}_shared/shared
+{% endif %}
+
+{% if sr_repl %}
+{% set role = salt['pillar.get']('nfs:' + hostfqdn + ':role') %}
+{% for h, i in salt['pillar.get']('nas_ip').items() %}
+{% if '_' + sid + '_data_' + role in h %}
+{% do data.append(i) %}
+{% endif %}
+{% endfor %}
+
+{% for h, i in salt['pillar.get']('nas_ip').items() %}
+{% if '_' + sid + '_shared_' + role in h %}
+{% do shared.append(i) %}
+{% endif %}
+{% endfor %}
+
+{% for h, i in salt['pillar.get']('nas_ip').items() %}
+{% if '_' + sid + '_log_' + role in h %}
+{% do log.append(i) %}
+{% endif %}
+{% endfor %}
+
+db:
+  /hana/data/{{ sid|upper }}/mnt00001: {{ data[0]|default("error", False) }}:/{{ sid }}_data_{{ role }}
+  /hana/log/{{ sid|upper }}/mnt00001: {{ log[0]|default("error", False) }}:/{{ sid }}_log_{{ role }}
+  /usr/sap/{{ sid|upper }}: {{ shared[0]|default("error", False) }}:/{{ sid }}_shared_{{ role }}/usr_sap
+  /hana/shared/{{ sid|upper }}: {{ shared[0]|default("error", False) }}:/{{ sid }}_shared_{{ role }}/shared
+{% endif %}

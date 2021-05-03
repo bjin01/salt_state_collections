@@ -11,7 +11,6 @@ nas_ip:
   NAS1_02_hgc_shared_prim_lif: 10.11.108.110
   NAS1_02_hwc_data_prim_lif: 10.11.108.111
   NAS1_02_hwc_shared_prim_lif: 10.11.108.112
-  NAS1_02_sapmnt_lif: 10.11.108.113
   NAS2_02_had_data_lif: 10.11.108.114
   NAS2_02_had_shared_lif: 10.11.108.115
   NAS2_02_hbc_data_sec_lif: 10.11.108.116
@@ -48,7 +47,35 @@ nas_ip:
   NAS2_02_hdd_shared_prim_lif: 10.11.108.147
   NAS1_02_hdd_data_sec_lif: 10.11.108.148
   NAS1_02_hdd_shared_sec_lif: 10.11.108.149
-  NAS1_03_xyz_shared_sec_lif: 172.28.0.7
-  NAS1_03_xyz_data_sec_lif: 172.28.0.7
 #  NAS1_04_abc_shared_sec_lif: 172.28.0.7
 #  NAS1_05_abc_data_sec_lif: 172.28.0.7
+  NAS1_02_hac_log_lif: 10.11.103.90
+  NAS1_02_hbc_log_prim_lif: 10.11.103.91
+  NAS1_02_hec_log_prim_lif: 10.11.103.92
+  NAS1_02_heq_log_prim_lif: 10.11.103.93
+  NAS1_02_hgc_log_prim_lif: 10.11.103.94
+  NAS1_02_hwc_log_prim_lif: 10.11.103.95
+  NAS2_02_had_log_lif: 10.11.103.96
+  NAS2_02_hbc_log_sec_lif: 10.11.103.97
+  NAS2_02_hbd_log_lif: 10.11.103.98
+  NAS2_02_hec_log_sec_lif: 10.11.103.99
+  NAS2_02_hed_log_lif: 10.11.103.100
+  NAS2_02_heq_log_sec_lif: 10.11.103.101
+  NAS2_02_hgc_log_sec_lif: 10.11.103.102
+  NAS2_02_hgd_log_lif: 10.11.103.103
+  NAS2_02_hoc_log_prim_lif: 10.11.103.104
+  NAS2_02_hoc_log_sec_lif: 10.11.103.105
+  NAS2_02_hod_log_lif: 10.11.103.106
+  NAS2_02_hsc_log_lif: 10.11.103.107
+  NAS2_02_hwc_log_sec_lif: 10.11.103.108
+  NAS2_02_hwd_log_lif: 10.11.103.109
+  NAS2_02_hwq_log_lif: 10.11.103.110
+  NAS2_02_hdd_log_prim_lif: 10.11.103.111
+  NAS1_02_hdd_log_sec_lif: 10.11.103.112
+  NAS1_03_xyz_shared_prim_lif: 172.28.0.7
+  NAS1_03_xyz_data_prim_lif: 172.28.0.7
+  NAS1_03_xyz_shared_sec_lif: 172.28.0.7
+  NAS1_03_xyz_log_sec_lif: 172.28.0.7
+  NAS1_03_xyz_log_prim_lif: 172.28.0.7
+  NAS1_03_xyz_data_sec_lif: 172.28.0.7
+
