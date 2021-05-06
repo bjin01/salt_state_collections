@@ -1,5 +1,27 @@
 {% if salt['grains.get']('fqdn') in salt['pillar.get']('nfs') %}  
 {% from "nfs/map.jinja" import mynfs with context %}
+{% set hostfqdn = salt['grains.get']('fqdn') %}
+{% set sid = salt['pillar.get']('nfs:' + hostfqdn + ':sid') %}
+fstab-config-block-base:
+  file.blockreplace:
+    - name: /etc/fstab
+    - marker_start: "# START salt managed comment -DO-NOT-EDIT-"
+    - marker_end: "# END salt comment --"
+    - content: '#'
+    - append_if_not_found: True
+    - show_changes: True
+
+hosts-config-block-accumulated1:
+  file.accumulated:
+    - filename: /etc/fstab
+    - name: my-accumulator1
+    - text: |
+         #
+         ## Mountpoints {{ sid }}
+         #
+    - require_in:
+      - file: fstab-config-block-base
+
 {% for h, i in mynfs.items() %} 
 {% if "error" in i %}
 failure_nofound_{{ h }}:
