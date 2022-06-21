@@ -5,6 +5,8 @@ from salt import exceptions
 import salt.utils.path
 import subprocess
 import socket
+import os
+import re
 
 __virtualname__ = 'bocrm'
 
@@ -24,15 +26,18 @@ def __virtual__():
             version, CRM_NEW_VERSION) >= 0
         LOGGER.info('crmsh version: %s', version)
         LOGGER.info(
-            '%s will be used', 'crm' if use_crm else 'ha-cluster')
+            '%s will be used', 'crm')
 
     else:
+        #print("----------------------crm_command")
         return (
+
             False,
             'The crmsh execution module failed to load: the crm package'
             ' is not available.')
 
-    if not use_crm and not bool(salt.utils.path.which(CRM_CLUSTERSTATE)):
+    if not use_crm or not bool(salt.utils.path.which(CRM_CLUSTERSTATE)):
+        #print("----------------------errors")
         return (
             False,
             'Either crmsh and or ClusterTools2 is not installed.'
@@ -44,103 +49,115 @@ def __virtual__():
     return __virtualname__
 
 def _msl_status():
+    ret = dict()
+    cluster_nodes = []
+    dc = ""
     # SAPHanaSR-showAttr | grep -E "^hana-1.*4:P:master1" | grep PRIM
     # crm_mon -1 | grep -i unmanaged
     # cs_clusterstate | grep -E "^Cluster state" | cut -d ":" -f 2
     # cs_clusterstate | grep -i "Stopped/FAILED" | cut -d ":" -f 2
-
-    out_clusterstate = subprocess.Popen(['cs_clusterstate'],
+    out_crm_nodes = subprocess.Popen(['crm', 'node', 'server'],
                         stdout=subprocess.PIPE
                         )
-    for line in iter(out_clusterstate.stdout.readline, b''):
-        if "Cluster state" in line.decode('utf-8'):
-            val = line.decode('utf-8')
-            val2 = val.split(": ")
-            #print("{0}".format(line.decode('utf-8')), end='')
-            print("{0}".format(val2[1].rstrip()))
+    for line in iter(out_crm_nodes.stdout.readline, b''):
+        cluster_nodes.append(line.decode('utf-8').rstrip())
 
+    #print("-------------------------{}--------------".format(cluster_nodes))
 
-    """ out_clusterstate = subprocess.Popen(['cs_clusterstate'], 
-                        stdout=subprocess.PIPE,
+    if len(cluster_nodes) == 0:
+        ret['cluster nodes'] = "Error getting cluster nodes."
+        return ret
+
+    out_crm_node_status = subprocess.Popen(['crm_mon', '-1', '--exclude=Summary', '--exclude=resources', '--output-as=xml'],
+                        stdout=subprocess.PIPE
                         )
 
-    grep_cluster_idle_text = "^Cluster state"
-    grep_cluster_idle_state = subprocess.Popen(['grep', '-E', grep_cluster_idle_text],
-                            universal_newlines=True,
-                            shell=True,
-                            stdin=out_clusterstate.stdout,
-                            stdout=subprocess.PIPE,
-                            )
-    cut_cluster_idle_output = subprocess.Popen(['cut', '-d', ':', '-f', '2'],
-                            universal_newlines=True,
-                            shell=True,
-                            stdin=grep_cluster_idle_state.stdout,
-                            stdout=subprocess.PIPE
-                            )
-    #cluster_state = repr(cut_cluster_idle_output).strip().lower()
-    print("-----------------------------{}------------------".format(cut_cluster_idle_output.communicate()[0].decode().strip()))
-    if cut_cluster_idle_output in "transit":
-        return "Cluster in transition"
+    ret["Nodes"] = {}
+    for line in iter(out_crm_node_status.stdout.readline, b''):
+        
+        for c in cluster_nodes:
+            #online_pattern = re.escape('.*<node name=.*online="true"')
+            online_pattern = c.rstrip() + '.*online=\"true\".*'
+            offline_pattern = c.rstrip() + '.*online=\"false\".*'
 
-    grep_failed_stopped_text = ".*Stopped/FAILED.*"
-    grep_failed_stopped = subprocess.Popen(['grep', '-E',               
-                            grep_failed_stopped_text],
-                            universal_newlines=True,
-                            shell=True,
-                            stdin=out_clusterstate.stdout,
-                            stdout=subprocess.PIPE,
-                            )
-    cut_failed_stopped_output = subprocess.Popen(['cut', '-d', ':', '-f', '2'],
-                            universal_newlines=True,
-                            shell=True,
-                            stdin=grep_failed_stopped.stdout
-                            stdout=subprocess.PIPE
-                            )
-    #failed_stopped_value = repr(cut_failed_stopped_output).strip()
-    print("-----------------------------{}------------------".format(cut_failed_stopped_output.communicate()[0].decode().strip()))
-    if int(cut_failed_stopped_output) != 0:
-        return "Failed or stopped resources found. Exit"
- """
+            if re.search(online_pattern, line.decode('utf-8')):
+                print("--------found-------------{}---------".format(line.decode('utf-8').rstrip()))
+                ret["Nodes"][c] = "online"
+            
+            if re.search(offline_pattern, line.decode('utf-8')):
+                print("--------found-------------{}---------".format(line.decode('utf-8').rstrip()))
+                ret["Nodes"][c] = "offline"
+
+
+    out_crmadmin = subprocess.Popen(['crmadmin', '-D'],
+                        stdout=subprocess.PIPE
+                        )
+    for line in iter(out_crmadmin.stdout.readline, b''):
+        #print("--------###############{}".format(line.decode('utf-8')))
+        if "Designated Controller is:" in line.decode('utf-8'):
+            if len(cluster_nodes) > 0:
+                
+                for n in cluster_nodes:
+                    #print("--------###############{}".format(n))
+                    if re.search(n, line.decode('utf-8').strip()):
+                        dc = n
+                        ret['Designated Controller'] = dc
+            else:
+                ret['Designated Controller'] = "" 
+
+    
+    if len(dc):
+        #print("get here -------------------------{}".format(dc))
+        out_cluster_idle = subprocess.Popen(['crmadmin', '-q', '-S', dc.rstrip()],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE
+                        )
+        #print("--------------{}-----------------".format(out_cluster_idle))
+        for line in iter(out_cluster_idle.stderr.readline, b''):
+            #print("--------AAA---{}".format(line.decode('utf-8').strip()))
+            ret['clusterstate'] = line.decode('utf-8').strip()
+
+
+    # crm_mon -1 --exclude="Summary" --exclude="nodes" --exclude="resources" --include="nodes" -X | grep -E "<node name=\"hana-2\".* online"
+    # crmadmin -q -S hana-1
+    # crmadmin -q -S hana-2 2>&1 >/dev/null
+
     hostname = socket.gethostname()
 
     out1 = subprocess.Popen(['SAPHanaSR-showAttr'], 
                         stdout=subprocess.PIPE,
                         )
 
-    grep_master_text = "^{}.*4:P:master1.*".format(hostname)
-    grep_secondary_text = "^{}.*4:S:master1.*".format(hostname)
 
-    grep_master_out = subprocess.Popen(['grep', '-E', grep_master_text],
-                            stdin=out1.stdout,
-                            stdout=subprocess.PIPE,
-                            )
+    #| grep -E ^hana-.*4:.*SOK|PRIM.*
+    sok_escaped = '.*[0-9]{2}.*4:S.*SOK'
+    search_pattern_sok = "^{}".format(hostname) + sok_escaped
+    #print("------------------------{}".format(search_pattern_sok))
+    prim_escaped = '.*[0-9]{10}.*4:P.*PRIM'
+    search_pattern_prim = "^{}".format(hostname) + prim_escaped
+    search_pattern_sfail = "^{}.*SFAIL".format(hostname)
 
-    primary_status = subprocess.call(['grep', 'PRIM'],
-                            stdin=grep_master_out.stdout,
-                            stdout=subprocess.PIPE,
-                            )
+    matches = 0
+    for line in iter(out1.stdout.readline, b''):
+        if re.search("failed", line.decode('utf-8').lower()):
+            ret['resources'] = "Found failed resources."
+        if re.search("unmanaged", line.decode('utf-8').lower()):
+            ret['resources'] = "Found resources in maintenance mode."
+        if re.search(search_pattern_sok, line.decode('utf-8')):
+            ret['sr_status'] = "SOK"
+            matches += 1
+        if re.search(search_pattern_prim, line.decode('utf-8')):
+            ret['sr_status'] = "PRIM"
+            matches += 1
+        if re.search(search_pattern_sfail, line.decode('utf-8')):
+            ret['sr_status'] = "SFAIL"
+            matches += 1
+
+
+    if matches != 1:
+        ret['sr_status'] = "UNKNOWN"
     
-    grep_secondary_out = subprocess.Popen(['grep', '-E', grep_secondary_text],
-                            stdin=out1.stdout,
-                            stdout=subprocess.PIPE,
-                            )
-    sok_status = subprocess.call(['grep', 'SOK'],
-                            stdin=grep_secondary_out.stdout,
-                            stdout=subprocess.PIPE,
-                            )
-    
-    sfail_status = subprocess.call(['grep', 'SFAIL'],
-                            stdin=grep_secondary_out.stdout,
-                            stdout=subprocess.PIPE,
-                            )
-
-    if primary_status == 0:
-        return "PRIM"
-    if sok_status == 0:
-        return "SOK"
-    if sfail_status == 0:
-        return "SFAIL"
-    return "UNKNOWN"
+    return ret
 
 def sync_status():
     '''
@@ -157,8 +174,8 @@ def sync_status():
         return "pacemaker is not running"
     else:
         #cmd = 'crm resource status msl_SAPHana_BJK_HDB00'
-        output = _msl_status()
-        return output
+        ret = _msl_status()
+        return ret
 
 def pacemaker():
     return __salt__['service.status']("pacemaker")
