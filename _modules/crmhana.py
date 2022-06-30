@@ -50,6 +50,8 @@ def __virtual__():
 
 def _msl_status():
     ret = dict()
+    ret["maintenance_approval"] = True
+    ret['resources'] = ""
     cluster_nodes = []
     dc = ""
     # SAPHanaSR-showAttr | grep -E "^hana-1.*4:P:master1" | grep PRIM
@@ -66,6 +68,8 @@ def _msl_status():
 
     if len(cluster_nodes) == 0:
         ret['cluster nodes'] = "Error getting cluster nodes."
+        ret["comment"] = "Failed to get cluster nodes."
+        ret["maintenance_approval"] = False
         return ret
 
     out_crm_node_status = subprocess.Popen(['crm_mon', '-1', '--exclude=Summary', '--exclude=resources', '--output-as=xml'],
@@ -81,12 +85,14 @@ def _msl_status():
             offline_pattern = c.rstrip() + '.*online=\"false\".*'
 
             if re.search(online_pattern, line.decode('utf-8')):
-                print("--------found-------------{}---------".format(line.decode('utf-8').rstrip()))
+                #print("--------found-------------{}---------".format(line.decode('utf-8').rstrip()))
                 ret["Nodes"][c] = "online"
             
             if re.search(offline_pattern, line.decode('utf-8')):
-                print("--------found-------------{}---------".format(line.decode('utf-8').rstrip()))
+                #print("--------found-------------{}---------".format(line.decode('utf-8').rstrip()))
                 ret["Nodes"][c] = "offline"
+                ret["comment"] = "A cluster node is offline."
+                ret["maintenance_approval"] = False
 
 
     out_crmadmin = subprocess.Popen(['crmadmin', '-D'],
@@ -103,7 +109,9 @@ def _msl_status():
                         dc = n
                         ret['Designated Controller'] = dc
             else:
-                ret['Designated Controller'] = "" 
+                ret['Designated Controller'] = ""
+                ret["comment"] = "Designated Controller could not be found."
+                ret["maintenance_approval"] = False
 
     
     if len(dc):
@@ -128,7 +136,13 @@ def _msl_status():
                         stdout=subprocess.PIPE,
                         )
 
-
+    #print("----------------out1:--------{}".format(len(out1.stdout.read())))
+    if len(out1.stdout.read()) == 0:
+        ret['sr_status'] = "None"
+        ret["comment"] = "This is not a HANA node."
+        ret["maintenance_approval"] = True
+        return ret
+    
     #| grep -E ^hana-.*4:.*SOK|PRIM.*
     sok_escaped = '.*[0-9]{2}.*4:S.*SOK'
     search_pattern_sok = "^{}".format(hostname) + sok_escaped
@@ -138,24 +152,37 @@ def _msl_status():
     search_pattern_sfail = "^{}.*SFAIL".format(hostname)
 
     matches = 0
+    
     for line in iter(out1.stdout.readline, b''):
+        print(".......{}".format(line.decode('utf-8').lower()))
         if re.search("failed", line.decode('utf-8').lower()):
             ret['resources'] = "Found failed resources."
         if re.search("unmanaged", line.decode('utf-8').lower()):
             ret['resources'] = "Found resources in maintenance mode."
         if re.search(search_pattern_sok, line.decode('utf-8')):
             ret['sr_status'] = "SOK"
+            print("SOK")
             matches += 1
         if re.search(search_pattern_prim, line.decode('utf-8')):
             ret['sr_status'] = "PRIM"
+            print("PRIM")
             matches += 1
         if re.search(search_pattern_sfail, line.decode('utf-8')):
             ret['sr_status'] = "SFAIL"
-            matches += 1
+            ret["maintenance_approval"] = False
+            matches += 2
+        
 
+    if ret['resources'] != "":
+        ret['sr_status'] = "UNCLEAR"
+        ret["comment"] = ret['resources']
+        ret["maintenance_approval"] = False
 
     if matches != 1:
         ret['sr_status'] = "UNKNOWN"
+        #ret["comment"] = "system replication status unknown."
+        ret["comment"] = matches
+        ret["maintenance_approval"] = False
     
     return ret
 
@@ -171,10 +198,14 @@ def sync_status():
         salt '*' bocrm.sync_status
     '''
     if not bool(__salt__['service.status']("pacemaker")):
-        return "pacemaker is not running"
+        ret = dict()
+        ret["comment"] = "pacemaker is not running"
+        ret["maintenance_approval"] = False
+        return ret
     else:
         #cmd = 'crm resource status msl_SAPHana_BJK_HDB00'
         ret = _msl_status()
+        #print("#########super ret {}".format(ret))
         return ret
 
 def pacemaker():
