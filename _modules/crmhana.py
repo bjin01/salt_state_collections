@@ -74,22 +74,37 @@ def _msl_status():
         ret["maintenance_approval"] = False
         return ret
 
-    out_master_slave_nodes = subprocess.Popen(['crm_mon', '--exclude=summary', '--exclude=nodes', '-1'],
+    out_resources_xml = subprocess.Popen(['crm_mon', '--exclude=all', '--include=resources', '-1', '--output-as=xml'],
                         stdout=subprocess.PIPE
                         )
+    
+    #here we try to find unmanaged resources which are in maintenance mode
+    seek_unmanaged_pattern = '.*managed=\"false\"'
+
+    for line in iter(out_resources_xml.stdout.readline, b''):
+
+        if re.search(seek_unmanaged_pattern, line.decode('utf-8')):
+            ret['resources'] = line.decode('utf-8')
+            ret['comment'] = "Resources is or are in maintenance mode."
+            ret["maintenance_approval"] = False
+            break
+
+    out_master_slave_nodes = subprocess.Popen(['crm_mon', '--exclude=all', '--include=resources', '-1'],
+                        stdout=subprocess.PIPE
+                        )
+
     for line in iter(out_master_slave_nodes.stdout.readline, b''):
-        master_node_pattern = '.*Masters: \[ ' + hostname
-        slave_node_pattern = '.*Slaves: \[ ' + hostname
-        
+        master_node_pattern = '.*Master.*' + hostname
+        slave_node_pattern = '.*Slave.*' + hostname
+
         if re.search(master_node_pattern, line.decode('utf-8')):
             master_slave_nodes.append(hostname)
-            """ print("--------found-------------{}---------".format(line.decode('utf-8')))
-            print("--------found-------------{}---------".format(master_node_pattern)) """
+            
 
         if re.search(slave_node_pattern, line.decode('utf-8')):
             master_slave_nodes.append(hostname)
 
-    out_crm_node_status = subprocess.Popen(['crm_mon', '-1', '--exclude=Summary', '--output-as=xml'],
+    out_crm_node_status = subprocess.Popen(['crm_mon', '-1', '--exclude=all', '--include=nodes', '--output-as=xml'],
                         stdout=subprocess.PIPE
                         )
 
@@ -116,7 +131,7 @@ def _msl_status():
             if re.search(offline_pattern, line.decode('utf-8')):
                 #print("--------found-------------{}---------".format(line.decode('utf-8').rstrip()))
                 ret["Nodes"][c] = "offline"
-                ret["comment"] = "A cluster node is offline."
+                ret["comment"] = "A cluster node is offline. {}".format(c)
                 ret["maintenance_approval"] = False
 
 
@@ -181,10 +196,7 @@ def _msl_status():
         
         for line in iter(out1.stdout.readline, b''):
             print(".......{}".format(line.decode('utf-8').lower()))
-            if re.search("failed", line.decode('utf-8').lower()):
-                ret['resources'] = "Found failed resources."
-            if re.search("unmanaged", line.decode('utf-8').lower()):
-                ret['resources'] = "Found resources in maintenance mode."
+           
             if re.search(search_pattern_sok, line.decode('utf-8')):
                 ret['sr_status'] = "SOK"
                 print("SOK")
@@ -199,10 +211,10 @@ def _msl_status():
                 matches += 2
         
 
-        if ret['resources'] != "":
+        """ if ret['resources'] != "":
             ret['sr_status'] = "UNCLEAR"
             ret["comment"] = "There are failed or unmanaged."
-            ret["maintenance_approval"] = False
+            ret["maintenance_approval"] = False """
 
         if matches != 1:
             ret['sr_status'] = "UNKNOWN"
