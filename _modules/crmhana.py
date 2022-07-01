@@ -74,7 +74,22 @@ def _msl_status():
         ret["maintenance_approval"] = False
         return ret
 
-    out_crm_node_status = subprocess.Popen(['crm_mon', '-1', '--exclude=Summary', '--exclude=resources', '--output-as=xml'],
+    out_master_slave_nodes = subprocess.Popen(['crm_mon', '--exclude=summary', '--exclude=nodes', '-1'],
+                        stdout=subprocess.PIPE
+                        )
+    for line in iter(out_master_slave_nodes.stdout.readline, b''):
+        master_node_pattern = '.*Masters: \[ ' + hostname
+        slave_node_pattern = '.*Slaves: \[ ' + hostname
+        
+        if re.search(master_node_pattern, line.decode('utf-8')):
+            master_slave_nodes.append(hostname)
+            """ print("--------found-------------{}---------".format(line.decode('utf-8')))
+            print("--------found-------------{}---------".format(master_node_pattern)) """
+
+        if re.search(slave_node_pattern, line.decode('utf-8')):
+            master_slave_nodes.append(hostname)
+
+    out_crm_node_status = subprocess.Popen(['crm_mon', '-1', '--exclude=Summary', '--output-as=xml'],
                         stdout=subprocess.PIPE
                         )
 
@@ -86,16 +101,13 @@ def _msl_status():
         
         for c in cluster_nodes:
             #online_pattern = re.escape('.*<node name=.*online="true"')
-            master_node_pattern = '.*Masters\:\s\[\s' + c
-            slave_node_pattern = '.*Slaves\:\s\[\s' + c
+            
             online_pattern = c.rstrip() + '.*online=\"true\".*'
             offline_pattern = c.rstrip() + '.*online=\"false\".*'
-
-            if re.search(master_node_pattern, line.decode('utf-8')):
-                master_slave_nodes.append(c.rstrip())
-
-            if re.search(slave_node_pattern, line.decode('utf-8')):
-                master_slave_nodes.append(c.rstrip())
+            
+            #print("--------found-------------{}---------".format(slave_node_pattern))
+            #print("--------found-------------{}---------".format(line.decode('utf-8')))
+            
 
             if re.search(online_pattern, line.decode('utf-8')):
                 #print("--------found-------------{}---------".format(line.decode('utf-8').rstrip()))
