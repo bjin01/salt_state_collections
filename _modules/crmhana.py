@@ -49,10 +49,12 @@ def __virtual__():
     return __virtualname__
 
 def _msl_status():
+    hostname = socket.gethostname()
     ret = dict()
     ret["maintenance_approval"] = True
     ret['resources'] = ""
     cluster_nodes = []
+    master_slave_nodes = []
     dc = ""
     # SAPHanaSR-showAttr | grep -E "^hana-1.*4:P:master1" | grep PRIM
     # crm_mon -1 | grep -i unmanaged
@@ -77,12 +79,23 @@ def _msl_status():
                         )
 
     ret["Nodes"] = {}
+
     for line in iter(out_crm_node_status.stdout.readline, b''):
+
+        #Search if the current node is master or slave
         
         for c in cluster_nodes:
             #online_pattern = re.escape('.*<node name=.*online="true"')
+            master_node_pattern = '.*Masters\:\s\[\s' + c
+            slave_node_pattern = '.*Slaves\:\s\[\s' + c
             online_pattern = c.rstrip() + '.*online=\"true\".*'
             offline_pattern = c.rstrip() + '.*online=\"false\".*'
+
+            if re.search(master_node_pattern, line.decode('utf-8')):
+                master_slave_nodes.append(c.rstrip())
+
+            if re.search(slave_node_pattern, line.decode('utf-8')):
+                master_slave_nodes.append(c.rstrip())
 
             if re.search(online_pattern, line.decode('utf-8')):
                 #print("--------found-------------{}---------".format(line.decode('utf-8').rstrip()))
@@ -130,60 +143,62 @@ def _msl_status():
     # crmadmin -q -S hana-1
     # crmadmin -q -S hana-2 2>&1 >/dev/null
 
-    hostname = socket.gethostname()
+    
 
     out1 = subprocess.Popen(['SAPHanaSR-showAttr'], 
                         stdout=subprocess.PIPE,
                         )
 
     #print("----------------out1:--------{}".format(len(out1.stdout.read())))
-    if len(out1.stdout.read()) == 0:
+    """ if len(out1.stdout.read()) == 0:
         ret['sr_status'] = "None"
         ret["comment"] = "This is not a HANA node."
         ret["maintenance_approval"] = True
-        return ret
+        return ret """
     
-    #| grep -E ^hana-.*4:.*SOK|PRIM.*
-    sok_escaped = '.*[0-9]{2}.*4:S.*SOK'
-    search_pattern_sok = "^{}".format(hostname) + sok_escaped
-    #print("------------------------{}".format(search_pattern_sok))
-    prim_escaped = '.*[0-9]{10}.*4:P.*PRIM'
-    search_pattern_prim = "^{}".format(hostname) + prim_escaped
-    search_pattern_sfail = "^{}.*SFAIL".format(hostname)
+    if hostname in master_slave_nodes:
+        #| grep -E ^hana-.*4:.*SOK|PRIM.*
+        sok_escaped = '.*[0-9]{2}.*4:S.*SOK'
+        search_pattern_sok = "^{}".format(hostname) + sok_escaped
+        #print("------------------------{}".format(search_pattern_sok))
+        prim_escaped = '.*[0-9]{10}.*4:P.*PRIM'
+        search_pattern_prim = "^{}".format(hostname) + prim_escaped
+        search_pattern_sfail = "^{}.*SFAIL".format(hostname)
 
-    matches = 0
-    
-    for line in iter(out1.stdout.readline, b''):
-        print(".......{}".format(line.decode('utf-8').lower()))
-        if re.search("failed", line.decode('utf-8').lower()):
-            ret['resources'] = "Found failed resources."
-        if re.search("unmanaged", line.decode('utf-8').lower()):
-            ret['resources'] = "Found resources in maintenance mode."
-        if re.search(search_pattern_sok, line.decode('utf-8')):
-            ret['sr_status'] = "SOK"
-            print("SOK")
-            matches += 1
-        if re.search(search_pattern_prim, line.decode('utf-8')):
-            ret['sr_status'] = "PRIM"
-            print("PRIM")
-            matches += 1
-        if re.search(search_pattern_sfail, line.decode('utf-8')):
-            ret['sr_status'] = "SFAIL"
-            ret["maintenance_approval"] = False
-            matches += 2
+        matches = 0
+        
+        for line in iter(out1.stdout.readline, b''):
+            print(".......{}".format(line.decode('utf-8').lower()))
+            if re.search("failed", line.decode('utf-8').lower()):
+                ret['resources'] = "Found failed resources."
+            if re.search("unmanaged", line.decode('utf-8').lower()):
+                ret['resources'] = "Found resources in maintenance mode."
+            if re.search(search_pattern_sok, line.decode('utf-8')):
+                ret['sr_status'] = "SOK"
+                print("SOK")
+                matches += 1
+            if re.search(search_pattern_prim, line.decode('utf-8')):
+                ret['sr_status'] = "PRIM"
+                print("PRIM")
+                matches += 1
+            if re.search(search_pattern_sfail, line.decode('utf-8')):
+                ret['sr_status'] = "SFAIL"
+                ret["maintenance_approval"] = False
+                matches += 2
         
 
-    if ret['resources'] != "":
-        ret['sr_status'] = "UNCLEAR"
-        ret["comment"] = ret['resources']
-        ret["maintenance_approval"] = False
+        if ret['resources'] != "":
+            ret['sr_status'] = "UNCLEAR"
+            ret["comment"] = "There are failed or unmanaged."
+            ret["maintenance_approval"] = False
 
-    if matches != 1:
-        ret['sr_status'] = "UNKNOWN"
-        #ret["comment"] = "system replication status unknown."
-        ret["comment"] = matches
-        ret["maintenance_approval"] = False
-    
+        if matches != 1:
+            ret['sr_status'] = "UNKNOWN"
+            ret["comment"] = "system replication status unknown."
+            ret["maintenance_approval"] = False
+    else:
+        ret['sr_status'] = "None"
+        ret["comment"] = "This host is not a HANA host."
     return ret
 
 def sync_status():
