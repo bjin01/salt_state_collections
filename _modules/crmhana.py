@@ -15,31 +15,7 @@ CRM_COMMAND = '/usr/sbin/crm'
 CRM_NEW_VERSION = '3.0.0'
 LOGGER = logging.getLogger(__name__)
 
-def __virtual__():
-    '''
-    Only load this module if crm package is installed
-    '''
-    if bool(salt.utils.path.which(CRM_COMMAND)):
-        version = __salt__['pkg.version'](CRMSH)
-        use_crm = __salt__['pkg.version_cmp'](
-            version, CRM_NEW_VERSION) >= 0
-        LOGGER.info('crmsh version: %s', version)
-        LOGGER.info(
-            '%s will be used', 'crm')
-
-    else:
-        return (
-            False,
-            'The crmsh execution module failed to load: the crm package'
-            ' is not available.')
-
-    if not use_crm:
-        return (
-            False,
-            'crmsh is not installed.'
-            ' package is not found.')
-
-    __salt__['crmsh.version'] = use_crm
+def __virtual__():    
     return __virtualname__
 
 def _msl_status():
@@ -240,6 +216,11 @@ def sync_status():
 
         salt '*' bocrm.sync_status
     '''
+    crm_ret = _check_crmsh()
+    print("pppppppppppppp   {}".format(crm_ret))
+    if not crm_ret['status']:
+        return crm_ret
+
     if not bool(__salt__['service.status']("pacemaker")):
         ret = dict()
         ret["comment"] = "pacemaker is not running"
@@ -255,3 +236,22 @@ def sync_status():
 
 def pacemaker():
     return __salt__['service.status']("pacemaker")
+
+def _check_crmsh():
+
+    if bool(salt.utils.path.which(CRM_COMMAND)):
+        version = __salt__['pkg.version'](CRMSH)
+        use_crm = __salt__['pkg.version_cmp'](
+            version, CRM_NEW_VERSION) >= 0
+        LOGGER.info('crmsh version: %s', version)
+        LOGGER.info(
+            '%s will be used', 'crm')
+
+    else:
+        return {'status': False, 'message': 'failed to find binary crm. Check if crmsh is installed.'}
+
+    if not use_crm:
+        return {'status': False, 'message': 'crmsh version is too old.'}
+    
+    #__salt__['crmsh.version'] = use_crm
+    return {'status': True, 'message': 'crmsh is installed.'}
