@@ -38,8 +38,6 @@ def __virtual__():
             False,
             'crmsh is not installed.'
             ' package is not found.')
-    
-    #pacemaker_runnung = __salt__['service.status']("pacemaker.service")
 
     __salt__['crmsh.version'] = use_crm
     return __virtualname__
@@ -151,7 +149,6 @@ def _msl_status():
 
             
             if re.search(offline_pattern, line.decode('utf-8')):
-                #print("--------found-------------{}---------".format(line.decode('utf-8').rstrip()))
                 ret["Nodes"][c] = "offline"
                 ret["node_comment"].append("A cluster node is offline. {}".format(c))
                 ret["maintenance_approval"] = False
@@ -182,7 +179,6 @@ def _msl_status():
                         )
 
         for line in iter(out_cluster_idle.stderr.readline, b''):
-            #print("--------AAA---{}".format(line.decode('utf-8').strip()))
             ret['clusterstate'] = line.decode('utf-8').strip()
             if ret['clusterstate'] not in "S_IDLE":
                 ret["dc_comment"] = "cluster state is not S_IDLE, wait until idle."
@@ -209,9 +205,7 @@ def _msl_status():
 
         matches = 0
         
-        for line in iter(out1.stdout.readline, b''):
-            #print(".......{}".format(line.decode('utf-8').lower()))
-           
+        for line in iter(out1.stdout.readline, b''):        
             if re.search(search_pattern_sok, line.decode('utf-8')):
                 ret['sr_status'] = "SOK"
                 print("SOK")
@@ -238,8 +232,7 @@ def _msl_status():
 
 def sync_status():
     '''
-    Show cluster status. The status is displayed by crm_mon. Supply additional
-    arguments for more information or different format.
+    Show SAP HANA Scale-up pacemaker cluster status.
 
     CLI Example:
 
