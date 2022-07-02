@@ -78,16 +78,20 @@ def _msl_status():
                         stdout=subprocess.PIPE
                         )
     
-    #here we try to find unmanaged resources which are in maintenance mode
+    #here we try to find failed or unmanaged resources which are in maintenance mode
     seek_unmanaged_pattern = '.*managed=\"false\"'
+    seek_resources_unmanaged_patterns = [
+        '.*managed=\"false\"',
+        '.*failed=\"true\"'
+    ]
 
     for line in iter(out_resources_xml.stdout.readline, b''):
-
-        if re.search(seek_unmanaged_pattern, line.decode('utf-8')):
-            ret['resources'] = line.decode('utf-8')
-            ret['comment'] = "Resources is or are in maintenance mode."
-            ret["maintenance_approval"] = False
-            break
+        for r in seek_resources_unmanaged_patterns:
+            if re.search(r, line.decode('utf-8')):
+                ret['resources'] = "resources failed or in maintenance mode."
+                ret['resource_comment'] = line.decode('utf-8')
+                ret["maintenance_approval"] = False
+                break
 
     out_master_slave_nodes = subprocess.Popen(['crm_mon', '--exclude=all', '--include=resources', '-1'],
                         stdout=subprocess.PIPE
@@ -110,12 +114,23 @@ def _msl_status():
 
     ret["Nodes"] = {}
 
+    
     for line in iter(out_crm_node_status.stdout.readline, b''):
 
         #Search if the current node is master or slave
         
         for c in cluster_nodes:
             #online_pattern = re.escape('.*<node name=.*online="true"')
+
+            node_status_patterns = [
+                '.*standby=\"true\"',
+                '.*standby_onfail=\"true\"',
+                '.*maintenance=\"true\"',
+                '.*pending=\"true\"',
+                '.*unclean=\"true\"',
+                '.*shutdown=\"true\"',
+                '.*expected_up=\"false\"'
+            ]
             
             online_pattern = c.rstrip() + '.*online=\"true\".*'
             offline_pattern = c.rstrip() + '.*online=\"false\".*'
@@ -126,7 +141,17 @@ def _msl_status():
 
             if re.search(online_pattern, line.decode('utf-8')):
                 #print("--------found-------------{}---------".format(line.decode('utf-8').rstrip()))
-                ret["Nodes"][c] = "online"
+                for n in node_status_patterns:
+                    #print("#######{}----------{}".format(n, hostname))
+                    if re.search(n, line.decode('utf-8')):
+                        
+                        print("#######{}----------{}".format(c, hostname))
+                        ret["Nodes"][c] = "online {}".format(n)
+                        ret["node_comment"] = "{} is online but {}.".format(c,n.lstrip(".*"))
+                        ret["maintenance_approval"] = False
+                    else:
+                        ret["Nodes"][c] = "online"
+
             
             if re.search(offline_pattern, line.decode('utf-8')):
                 #print("--------found-------------{}---------".format(line.decode('utf-8').rstrip()))
@@ -195,7 +220,7 @@ def _msl_status():
         matches = 0
         
         for line in iter(out1.stdout.readline, b''):
-            print(".......{}".format(line.decode('utf-8').lower()))
+            #print(".......{}".format(line.decode('utf-8').lower()))
            
             if re.search(search_pattern_sok, line.decode('utf-8')):
                 ret['sr_status'] = "SOK"
@@ -245,6 +270,8 @@ def sync_status():
         #cmd = 'crm resource status msl_SAPHana_BJK_HDB00'
         ret = _msl_status()
         #print("#########super ret {}".format(ret))
+        if not ret["maintenance_approval"]:
+            __context__["retcode"] = 42
         return ret
 
 def pacemaker():
