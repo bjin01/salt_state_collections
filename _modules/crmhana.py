@@ -44,6 +44,25 @@ def _msl_status():
         ret["maintenance_approval"] = False
         return ret
 
+    out_resources_xml_1 = subprocess.Popen(['crm_mon', '--exclude=all', '--include=resources', '-1', '--output-as=xml'],
+                        stdout=subprocess.PIPE
+                        )
+    
+    out_resources_xml_grep = subprocess.Popen(['grep', '-E', '<clone id=.*multi_state=\"true\"'],
+                        stdin=out_resources_xml_1.stdout,
+                        stdout=subprocess.PIPE
+                        )
+
+    out_resources_xml_awk = subprocess.Popen(['awk', '{print $2}'],
+                        stdin=out_resources_xml_grep.stdout,
+                        stdout=subprocess.PIPE
+                        )
+
+    ms_resource_name = out_resources_xml_awk.communicate()[0].decode("utf-8")
+    ms_res_name = ms_resource_name.split('=', 1)
+    ms_rs_name = ms_res_name[1].strip()
+    ret['msl_resource'] = ms_rs_name.strip('\"')
+
     #next we try to get resource status in xml format and do regex search.
     out_resources_xml = subprocess.Popen(['crm_mon', '--exclude=all', '--include=resources', '-1', '--output-as=xml'],
                         stdout=subprocess.PIPE
