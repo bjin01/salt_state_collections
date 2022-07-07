@@ -1,0 +1,118 @@
+from __future__ import absolute_import, unicode_literals, print_function
+import logging
+
+from salt import exceptions
+import salt.utils.path
+import subprocess
+import socket
+import os
+import re
+
+def precheck(name):
+    ret = dict()
+    minion_id = __salt__['grains.get']('id')
+    if __opts__['test']:
+        ret['name'] = 'HANA SR Scale up Cluster pre-check'
+        ret['changes'] = dict()
+        ret['result'] = None
+        ret['comment'] = 'We check the cluster status {0}'.format(minion_id)
+        return ret
+    
+    try:
+        ret_from_mod = __salt__["bocrm.sync_status"]()
+        print("-------------------{}-------------".format(ret_from_mod))
+        
+    except:
+        ret["name"] = "HANA SR Scale up Cluster pre-check"
+        ret['changes'] = {
+            "old": "Nothing",
+            "new": "the execution module bocrm.sync_status could not be loaded. The reason could be that dependant binaries are not available. crmsh and ClusterTools2 packages",
+        }
+        ret['comment'] = "Something went wrong."
+        ret['result'] = False
+        return ret
+
+
+    ret['name'] = 'HANA SR Scale up Cluster pre-check'
+    if not ret_from_mod:
+        ret['changes'] = {"Fatal Error": "No result found from bocrm.sync_status"}
+        ret['comment'] = "Something is not ok with the HANA Cluster. Do not patch OS."
+        ret['result'] = False
+
+    if not ret_from_mod["maintenance_approval"]:
+        ret["result"] = False
+        ret['comment'] = "Something is not ok with the HANA Cluster. Do not patch OS."
+        ret['changes'] = {
+            "old": "Nothing",
+            "new": ret_from_mod,
+        }
+    
+    if ret_from_mod["maintenance_approval"]:
+        ret["result"] = True
+        ret['comment'] = "HANA Cluster is looking good."
+        ret['changes'] = {
+            "old": "Nothing",
+            "new": ret_from_mod,
+        }   
+
+    
+
+    return ret
+
+def maint_secondary(name, msl_resource):
+    """
+    Set pacemaker master-slave resource to maintenance mode
+
+    This state module does a custom thing. It calls out to the execution module
+    ``crmhana`` in order to check the current system and perform any
+    needed changes.
+
+    name:
+        you can provide any name for this param.
+        A required argument
+    msl_resource:
+        provide the pacemaker msl resource name.
+        A required argument
+    """
+    ret = {
+        "name": name,
+        "changes": {},
+        "result": False,
+        "comment": "",
+    }
+
+    try:
+        ret_from_mod = __salt__["bocrm.set_msl_maintenance"](msl_resource)
+        print("-------------------{}-------------".format(ret_from_mod))
+        
+    except:
+        ret["name"] = "HANA SR Scale up - set {} into maintenance".format(msl_resource)
+        ret['changes'] = {
+            "old": "{}".format(msl_resource),
+            "new": "the execution module bocrm.set_msl_maintenance failed.",
+        }
+        ret['comment'] = "Something went wrong."
+        ret['result'] = False
+        return ret
+    
+    if not ret_from_mod:
+        ret['changes'] = {"Fatal Error": "No result found from bocrm.set_msl_maintenance"}
+        ret['comment'] = "Something is not ok with the HANA Cluster. Do not patch OS."
+        ret['result'] = False
+    
+    if ret_from_mod["msl_maintenance"]:
+        ret['changes'] = {
+            "old": "Nothing",
+            "new": ret_from_mod,
+        }   
+        ret['comment'] = "msl resource is in maintenance. HANA Secondary node can be patched."
+        ret['result'] = True
+    else:
+        ret['changes'] = {
+            "old": "Nothing",
+            "new": ret_from_mod,
+        }   
+        ret['comment'] = "msl resource is NOT maintenance. Do not continue."
+        ret['result'] = False
+
+    return ret

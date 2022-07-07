@@ -237,7 +237,6 @@ def sync_status():
         salt '*' bocrm.sync_status
     '''
     crm_ret = _check_crmsh()
-    print("pppppppppppppp   {}".format(crm_ret))
     if not crm_ret['status']:
         return crm_ret
 
@@ -275,3 +274,68 @@ def _check_crmsh():
     
     #__salt__['crmsh.version'] = use_crm
     return {'status': True, 'message': 'crmsh is installed.'}
+
+def _search_pattern(pattern, inputs):
+    for line in iter(inputs.stdout.readline, b''):        
+            if re.search(pattern, line.decode('utf-8')):
+                return True
+    return False
+
+def _set_msl_maintenance(msl_resource_name):
+    hostname = socket.gethostname()
+    ret = dict()
+    ret['msl_maintenance'] = False
+
+    verify_pattern = "\<clone id=\"{}\" multi_state=\"true\".*managed=\"false\".*>$".format(msl_resource_name)
+
+    out_resources_xml = subprocess.Popen(['crm_mon', '--exclude=all', '--include=resources', '-1', '--output-as=xml'],
+                        shell=True,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE
+                        )
+
+    if _search_pattern(verify_pattern, out_resources_xml):
+        ret['msl_maintenance'] = True
+        return ret
+    else:
+        out_set_maint_mode = subprocess.Popen(['crm', 'resource', 'maintenance', msl_resource_name],
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE
+                            )
+        out_set_maint_mode.wait()
+        if out_set_maint_mode.returncode != 0:
+            for line in iter(out_set_maint_mode.stderr.readline, b''): 
+                #print("88888888888888888 {}".format(line.decode('utf-8')))
+                ret['msl_resource_error'] = ''.join(line.decode('utf-8'))
+
+    out_resources_xml = subprocess.Popen(['crm_mon', '--exclude=all', '--include=resources', '-1', '--output-as=xml'],
+                        stdout=subprocess.PIPE
+                        )
+
+    if _search_pattern(verify_pattern, out_resources_xml):
+        ret['msl_maintenance'] = True
+                
+    return ret
+
+def set_msl_maintenance(msl_resource_name):
+    ret = dict()
+
+    crm_ret = _check_crmsh()
+    if not crm_ret['status']:
+        __context__["retcode"] = 42
+        return crm_ret
+
+    if not bool(__salt__['service.status']("pacemaker")):
+        ret = dict()
+        ret["comment"] = "pacemaker is not running"
+        __context__["retcode"] = 42
+        return ret
+    else:
+        #set msl_SAPHana_BJK_HDB00 to maintenance mode 
+        ret = _set_msl_maintenance(msl_resource_name)
+        #print("#########super ret {}".format(ret))
+        if not ret["msl_maintenance"]:
+            __context__["retcode"] = 42
+        return ret
+
+    return ret
