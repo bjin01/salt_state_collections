@@ -44,6 +44,7 @@ def _msl_status():
         ret["maintenance_approval"] = False
         return ret
 
+    #Trying to find the master-slave resource name and add it to the dict for later usage in salt state to set the resource into maintenance or move it.
     out_resources_xml_1 = subprocess.Popen(['crm_mon', '--exclude=all', '--include=resources', '-1', '--output-as=xml'],
                         stdout=subprocess.PIPE
                         )
