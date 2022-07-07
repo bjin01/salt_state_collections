@@ -32,7 +32,7 @@ salt "hana-*" bocrm.sync_status
 
 Sample output:
 ```
-salt "hana-*" bocrm.sync_status
+suma1:/srv/salt/myhana # salt "hana*" bocrm.sync_status 
 hana-2.bo2go.home:
     ----------
     Designated Controller:
@@ -49,32 +49,13 @@ hana-2.bo2go.home:
         S_IDLE
     maintenance_approval:
         True
+    msl_resource:
+        msl_SAPHana_BJK_HDB00
     node_comment:
     resource_comment:
     resources:
     sr_status:
         SOK
-hana-1.bo2go.home:
-    ----------
-    Designated Controller:
-        hana-1
-    Nodes:
-        ----------
-        hana-1:
-            online
-        hana-2:
-            online
-        hana-3:
-            online
-    clusterstate:
-        S_IDLE
-    maintenance_approval:
-        True
-    node_comment:
-    resource_comment:
-    resources:
-    sr_status:
-        PRIM
 hana-3.bo2go.home:
     ----------
     Designated Controller:
@@ -93,9 +74,34 @@ hana-3.bo2go.home:
         This host is not a HANA host.
     maintenance_approval:
         True
+    msl_resource:
+        msl_SAPHana_BJK_HDB00
     node_comment:
     resource_comment:
     resources:
     sr_status:
         None
+hana-1.bo2go.home:
+    ----------
+    Designated Controller:
+        hana-1
+    Nodes:
+        ----------
+        hana-1:
+            online
+        hana-2:
+            online
+        hana-3:
+            online
+    clusterstate:
+        S_IDLE
+    maintenance_approval:
+        True
+    msl_resource:
+        msl_SAPHana_BJK_HDB00
+    node_comment:
+    resource_comment:
+    resources:
+    sr_status:
+        PRIM
 ```
