@@ -7,6 +7,7 @@ import subprocess
 import socket
 import os
 import re
+import time
 
 __virtualname__ = 'bocrm'
 
@@ -131,12 +132,11 @@ def _msl_status():
             
 
             if re.search(online_pattern, line.decode('utf-8')):
-                #print("--------found-------------{}---------".format(line.decode('utf-8').rstrip()))
+                
                 for n in node_status_patterns:
-                    #print("#######{}----------{}".format(n, hostname))
+                    
                     if re.search(n, line.decode('utf-8')):
                         
-                        print("#######{}----------{}".format(c, hostname))
                         ret["Nodes"][c] = "online {}".format(c)
                         ret["node_comment"].append("{} is online but {}.".format(c,n.lstrip(".*")))
                         ret["maintenance_approval"] = False
@@ -177,6 +177,7 @@ def _msl_status():
         for line in iter(out_cluster_idle.stderr.readline, b''):
             ret['clusterstate'] = line.decode('utf-8').strip()
             if ret['clusterstate'] not in "S_IDLE":
+                __salt__["grains.set"]('cluster_state_idle', False)
                 ret["dc_comment"] = "cluster state is not S_IDLE, wait until idle."
                 ret["maintenance_approval"] = False
                 #we end the func if cluster state is not s_idle. Then no need to further query the cluster.
@@ -192,7 +193,7 @@ def _msl_status():
         #the secondary node if working correctly has a score value of 2 digits and must be 4:S and SOK
         sok_escaped = '.*[0-9]{2}.*4:S.*SOK'
         search_pattern_sok = "^{}".format(hostname) + sok_escaped
-        #print("------------------------{}".format(search_pattern_sok))
+        
         #the primary node if working properly has a score value of 10 digits and 4:P and PRIM
         prim_escaped = '.*[0-9]{10}.*4:P.*PRIM'
         search_pattern_prim = "^{}".format(hostname) + prim_escaped
@@ -200,15 +201,18 @@ def _msl_status():
         search_pattern_sfail = "^{}.*SFAIL".format(hostname)
 
         matches = 0
-        
+        fqdnhostname = socket.getfqdn(hostname)
+
         for line in iter(out1.stdout.readline, b''):        
             if re.search(search_pattern_sok, line.decode('utf-8')):
                 ret['sr_status'] = "SOK"
-                print("SOK")
+                __salt__['grains.set']('hana_secondary', fqdnhostname, 'force=True')
+                
                 matches += 1
             if re.search(search_pattern_prim, line.decode('utf-8')):
+                __salt__['grains.set']('hana_primary', fqdnhostname, 'force=True')
                 ret['sr_status'] = "PRIM"
-                print("PRIM")
+               
                 matches += 1
             if re.search(search_pattern_sfail, line.decode('utf-8')):
                 ret['sr_status'] = "SFAIL"
@@ -246,9 +250,8 @@ def sync_status():
         ret["maintenance_approval"] = False
         return ret
     else:
-        #cmd = 'crm resource status msl_SAPHana_BJK_HDB00'
         ret = _msl_status()
-        #print("#########super ret {}".format(ret))
+        
         if not ret["maintenance_approval"]:
             __context__["retcode"] = 42
         return ret
@@ -276,44 +279,134 @@ def _check_crmsh():
     return {'status': True, 'message': 'crmsh is installed.'}
 
 def _search_pattern(pattern, inputs):
-    for line in iter(inputs.stdout.readline, b''):        
-            if re.search(pattern, line.decode('utf-8')):
-                return True
+    
+    for line in iter(inputs.stdout.readline, b''):
+        if re.search(pattern, line.decode('utf-8')):
+            return True    
     return False
 
-def _set_msl_maintenance(msl_resource_name):
-    hostname = socket.gethostname()
-    ret = dict()
-    ret['msl_maintenance'] = False
+def is_quorum():
 
-    verify_pattern = "\<clone id=\"{}\" multi_state=\"true\".*managed=\"false\".*>$".format(msl_resource_name)
+    out_corosync_quorum_status = subprocess.Popen(['corosync-quorumtool', '-s'],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE
+                        )
+    
+    expected_votes = 0
+    total_votes = 0
 
-    out_resources_xml = subprocess.Popen(['crm_mon', '--exclude=all', '--include=resources', '-1', '--output-as=xml'],
-                        shell=True,
+    for line in iter(out_corosync_quorum_status.stdout.readline, b''):
+
+        if re.search("Expected votes:", line.decode('utf-8')):
+            expected_votes = line.decode('utf-8').split(":")[1].strip()
+
+        if re.search("Total votes:", line.decode('utf-8')):
+            total_votes = line.decode('utf-8').split(":")[1].strip()
+
+    if expected_votes == total_votes:
+
+        return True
+
+    return False
+
+def is_cluster_idle():
+    __salt__["grains.set"]('cluster_state_idle', False)
+    out_crmadmin_dc_lookup = subprocess.Popen(['crmadmin', '-D'],
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE
                         )
 
+    mycmd = ['cut', '-d', ':', '-f', '2']
+    out_crmadmin_dc_host = subprocess.Popen(mycmd,
+                    stdin=out_crmadmin_dc_lookup.stdout,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE
+                    )
+
+    dc_host, err_dc_host = out_crmadmin_dc_host.communicate()
+    if not err_dc_host:
+        dc_host = dc_host.decode('utf-8')
+        dc_host = dc_host.strip()
+        if dc_host != "":
+            out_cluster_idle_status = subprocess.Popen(['crmadmin', '-q', '-S', dc_host],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE
+                        )
+
+            for line in iter(out_cluster_idle_status.stdout.readline, b''):
+                cluster_state = line.decode('utf-8')
+                
+                if re.search("S_IDLE", cluster_state):
+                    __salt__["grains.set"]('cluster_state_idle', True)
+                    return True
+
+    return False
+
+def wait_for_cluster_idle(interval, timeout):
+    ret = dict()
+    hostname = socket.gethostname()
+    fqdnhostname = socket.getfqdn(hostname)
+    __salt__["grains.set"]('cluster_state_idle', False)
+
+    if interval <=15:
+        interval = 15
+    
+    if timeout <= 1:
+        timeout = 1
+    
+    timeout = time.time() + 60*timeout
+
+    while True:
+        time.sleep(interval)
+        
+        if is_cluster_idle():
+            ret['cluster_state'] = "is idle now."
+            __salt__["event.send"]('suma/pacemaker/cluster/state/idle', {"cluster_idle": True, 'node': fqdnhostname})
+            __salt__["grains.set"]('cluster_state_idle', True)
+
+            return True
+
+        if time.time() > timeout:
+            break
+    
+    ret['cluster_state'] = "timeout and cluster state is not IDLE yet."
+    __context__["retcode"] = 42
+    return False
+
+def set_on_msl_maintenance(msl_resource_name):
+    hostname = socket.gethostname()
+    ret = dict()
+    ret['msl_maintenance'] = False
+
+    verify_pattern = "\<clone id=\"{}\" multi_state=\"true\".*managed=\"true\".*>$".format(msl_resource_name)
+
+    out_resources_xml = subprocess.Popen(['crm_mon', '-1', '--exclude=all', '--include=resources', '--output-as=xml'],
+                        stdout=subprocess.PIPE
+                        )
+    
     if _search_pattern(verify_pattern, out_resources_xml):
-        ret['msl_maintenance'] = True
-        return ret
-    else:
         out_set_maint_mode = subprocess.Popen(['crm', 'resource', 'maintenance', msl_resource_name],
                             stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE
                             )
+        ret["run_on"] = hostname
+        
         out_set_maint_mode.wait()
+
         if out_set_maint_mode.returncode != 0:
             for line in iter(out_set_maint_mode.stderr.readline, b''): 
-                #print("88888888888888888 {}".format(line.decode('utf-8')))
                 ret['msl_resource_error'] = ''.join(line.decode('utf-8'))
 
-    out_resources_xml = subprocess.Popen(['crm_mon', '--exclude=all', '--include=resources', '-1', '--output-as=xml'],
+    out_resources_xml_after = subprocess.Popen(['crm_mon', '--exclude=all', '--include=resources', '-1', '--output-as=xml'],
                         stdout=subprocess.PIPE
                         )
+                        
+    verify_pattern2 = "\<clone id=\"{}\" multi_state=\"true\".*managed=\"false\".*>$".format(msl_resource_name)
 
-    if _search_pattern(verify_pattern, out_resources_xml):
+    if _search_pattern(verify_pattern2, out_resources_xml_after):
         ret['msl_maintenance'] = True
+        ret['comment'] = "{} is in maintenance mode now.".format(msl_resource_name)
+        return ret
                 
     return ret
 
@@ -330,12 +423,164 @@ def set_msl_maintenance(msl_resource_name):
         ret["comment"] = "pacemaker is not running"
         __context__["retcode"] = 42
         return ret
+    
+    if not is_quorum():
+        ret = dict()
+        ret["comment"] = "corosync quorum failed. Node does not have quorum partition."
+        __context__["retcode"] = 42
+        return ret
+
+    if not is_cluster_idle():
+        ret = dict()
+        ret["comment"] = "cluster state is not S_IDLE."
+        __context__["retcode"] = 42
+        return ret
     else:
+        
         #set msl_SAPHana_BJK_HDB00 to maintenance mode 
-        ret = _set_msl_maintenance(msl_resource_name)
-        #print("#########super ret {}".format(ret))
+        ret = set_on_msl_maintenance(msl_resource_name)
         if not ret["msl_maintenance"]:
             __context__["retcode"] = 42
+            return ret
+
+    return ret
+
+def set_off_msl_maintenance(msl_resource_name):
+    hostname = socket.gethostname()
+    ret = dict()
+    ret['msl_maintenance'] = True
+
+    if not bool(__salt__["grains.get"]('cluster_state_idle')):
+        ret['commant'] = "Cluster state is not idle."
+        __context__["retcode"] = 42
+        
         return ret
+
+
+    verify_pattern = "\<clone id=\"{}\" multi_state=\"true\".*managed=\"false\".*>$".format(msl_resource_name)
+
+    out_resources_xml = subprocess.Popen(['crm_mon', '--exclude=all', '--include=resources', '-1', '--output-as=xml'],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE
+                        )
+
+    if _search_pattern(verify_pattern, out_resources_xml):
+        ret['msl_maintenance'] = True
+        ret['comment'] = "{} is still in maintenance mode".format(msl_resource_name)
+
+        out_resources_xml = subprocess.Popen(['crm', 'resource', 'maintenance', msl_resource_name, 'off'],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE
+                        )
+        time.sleep(3)
+        if out_resources_xml.returncode != 0:
+            for line in iter(out_resources_xml.stderr.readline, b''): 
+                ret['msl_resource_error'] = ''.join(line.decode('utf-8'))
+    
+    verify_pattern_after = "\<clone id=\"{}\" multi_state=\"true\".*managed=\"true\".*>$".format(msl_resource_name)
+
+    out_resources_xml = subprocess.Popen(['crm_mon', '--exclude=all', '--include=resources', '-1', '--output-as=xml'],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE
+                        )
+    if _search_pattern(verify_pattern_after, out_resources_xml):
+        ret['msl_maintenance'] = False
+        ret['comment'] = "{} is online again.".format(msl_resource_name)
+
+    return ret
+
+def off_msl_maintenance(msl_resource_name):
+    ret = dict()
+
+    crm_ret = _check_crmsh()
+    if not crm_ret['status']:
+        __context__["retcode"] = 42
+        return crm_ret
+
+    if not bool(__salt__['service.status']("pacemaker")):
+        ret = dict()
+        ret["comment"] = "pacemaker is not running"
+        __context__["retcode"] = 42
+        return ret
+    
+    if not is_quorum():
+        ret = dict()
+        ret["comment"] = "corosync quorum failed. Node does not have quorum partition."
+        __context__["retcode"] = 42
+        return ret
+    
+    if not is_cluster_idle():
+        ret = dict()
+        ret["comment"] = "cluster state is not S_IDLE."
+        __context__["retcode"] = 42
+        return ret
+    else:
+        #set msl_SAPHana_BJK_HDB00 to maintenance mode 
+        ret = set_off_msl_maintenance(msl_resource_name)
+        if ret['msl_maintenance']:
+            __context__["retcode"] = 42
+        return ret
+
+    ret['comment'] = "Something went wrong."
+    return ret
+
+def start_pacemaker():
+    ret = dict()
+
+    crm_ret = _check_crmsh()
+
+    if not crm_ret['status']:
+        __context__["retcode"] = 42
+        return crm_ret
+
+    if not bool(__salt__['service.status']("pacemaker")):
+        __salt__['service.start']("pacemaker")
+    else:
+        ret['pacemaker'] = "is already running"
+        return ret
+
+    
+    if not bool(__salt__['service.status']("pacemaker")):
+        ret['pacemaker'] = "Failed to start pacemaker."
+        __context__["retcode"] = 42
+        
+    else:
+        ret['pacemaker'] = "running"
+    
+    return ret
+
+def stop_pacemaker():
+    ret = dict()
+
+    crm_ret = _check_crmsh()
+
+    if not crm_ret['status']:
+        ret['pacemaker'] = "crmsh is not available.."
+        __context__["retcode"] = 42
+        return crm_ret
+
+    if not is_quorum():
+        ret = dict()
+        ret["comment"] = "corosync quorum failed. Node does not have quorum partition. Therefore we don't stop pacemaker."
+        __context__["retcode"] = 42
+        return ret
+    
+    if not is_cluster_idle():
+        ret = dict()
+        ret["comment"] = "cluster state is not S_IDLE therefore not stopping pacemaker."
+        __context__["retcode"] = 42
+        return ret
+
+    if bool(__salt__['service.status']("pacemaker")):
+        __salt__['service.stop']("pacemaker")
+    else:
+        ret['pacemaker'] = "is already stopped."
+        return ret
+    
+    if bool(__salt__['service.status']("pacemaker")):
+        ret['pacemaker'] = "Failed to stop pacemaker."
+        __context__["retcode"] = 42
+    else:
+        ret['pacemaker'] = "stopped"
 
     return ret

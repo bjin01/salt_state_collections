@@ -20,7 +20,6 @@ def precheck(name):
     
     try:
         ret_from_mod = __salt__["bocrm.sync_status"]()
-        print("-------------------{}-------------".format(ret_from_mod))
         
     except:
         ret["name"] = "HANA SR Scale up Cluster pre-check"
@@ -55,8 +54,6 @@ def precheck(name):
             "new": ret_from_mod,
         }   
 
-    
-
     return ret
 
 def maint_secondary(name, msl_resource):
@@ -83,8 +80,6 @@ def maint_secondary(name, msl_resource):
 
     try:
         ret_from_mod = __salt__["bocrm.set_msl_maintenance"](msl_resource)
-        print("-------------------{}-------------".format(ret_from_mod))
-        
     except:
         ret["name"] = "HANA SR Scale up - set {} into maintenance".format(msl_resource)
         ret['changes'] = {
