@@ -182,6 +182,11 @@ def _msl_status():
                 ret["maintenance_approval"] = False
                 #we end the func if cluster state is not s_idle. Then no need to further query the cluster.
                 return ret
+            
+            if ret['clusterstate'] in "S_IDLE":
+                __salt__["grains.set"]('cluster_state_idle', True)
+                ret["dc_comment"] = "cluster state is in S_IDLE."
+                break
 
     #finally we query the hana system replication status.
     out1 = subprocess.Popen(['SAPHanaSR-showAttr'], 
@@ -227,6 +232,9 @@ def _msl_status():
     else:
         #and if the node was not found in the list of master slave list then we put the state to none. In diskless SBD scenario we could have more than 2 nodes in a cluster.
         ret['sr_status'] = "None"
+        ret['diskless_node'] = True
+
+        __salt__["grains.set"]('diskless_node', True, 'force=True')
         ret["comment"] = "This host is not a HANA host."
     return ret
 
@@ -258,6 +266,15 @@ def sync_status():
 
 def pacemaker():
     return __salt__['service.status']("pacemaker")
+
+def _check_SAPHanaSR_showAttr():
+    find_command = '/usr/sbin/SAPHanaSR-showAttr'
+    if bool(salt.utils.path.which(find_command)):
+        return True
+    else:
+        return False
+    return False
+
 
 def _check_crmsh():
 
@@ -584,3 +601,90 @@ def stop_pacemaker():
         ret['pacemaker'] = "stopped"
 
     return ret
+
+
+def find_cluster_nodes():
+    diskless_node_name = ""
+    ret = dict()
+    cluster_nodes = []
+    cluster_node_info = {}
+    cluster_node_info['cluster_nodes'] = []
+    hostname = socket.gethostname()
+    message_tag = "suma/hana/cluster/nodeinfo/{}".format(hostname)
+    #First try to find the pacemaker cluster member nodes.
+    out_crm_nodes = subprocess.Popen(['crm', 'node', 'server'],
+                        stdout=subprocess.PIPE
+                        )
+    for line in iter(out_crm_nodes.stdout.readline, b''):
+        #create a list of found nodes.
+        cluster_nodes.append(line.decode('utf-8').rstrip())
+        cluster_node_info['cluster_nodes'].append(line.decode('utf-8').rstrip())
+    #cluster_node_info['cluster_nodes'] = cluster_nodes
+
+    if len(cluster_nodes) <= 2 or len(cluster_nodes) > 3:
+        cluster_node_info["diskless_node"] = None
+
+    total_nodes = len(cluster_nodes)
+    #print("++++++++++++++ cluster_nodes {}".format(cluster_nodes))
+
+    if _check_SAPHanaSR_showAttr():
+        #print("++++++++++++++ cluster_nodes {}".format(cluster_nodes))
+
+        #finally we query the hana system replication status.
+        out1 = subprocess.Popen(['SAPHanaSR-showAttr'], 
+                            stdout=subprocess.PIPE,
+                            )
+        
+        out2 = subprocess.Popen(['grep', '-A5', '-E', 'Hosts.*clone_state.*node_state'],
+                            stdin=out1.stdout, 
+                            stdout=subprocess.PIPE,
+                            )
+
+        #the secondary node if working correctly has a score value of 2 digits and must be 4:S and SOK
+        sok_escaped = '.*online.*4:S.*SOK'
+        search_pattern_sok = "^{}".format(hostname) + sok_escaped
+        
+        #the primary node if working properly has a score value of 10 digits and 4:P and PRIM
+        prim_escaped = '.*online.*4:P.*PRIM'
+        search_pattern_prim = "^{}".format(hostname) + prim_escaped
+        #and if SFAIL is found we must set status to maintenance_approval = False
+        search_pattern_sfail = "^{}.*SFAIL".format(hostname)
+
+        for line in iter(out2.stdout.readline, b''):
+
+              
+            if re.search(search_pattern_sok, line.decode('utf-8')):
+                ret['sr_status'] = "SOK"
+                cluster_nodes.remove(hostname)
+                cluster_node_info["hana_secondary"] = socket.getfqdn(hostname)
+                print("---------- {}".format(line.decode('utf-8')))
+
+            if re.search(search_pattern_prim, line.decode('utf-8')):
+                cluster_node_info["hana_primary"] = socket.getfqdn(hostname)
+                cluster_nodes.remove(hostname)
+                ret['sr_status'] = "PRIM"
+
+            if re.search(search_pattern_sfail, line.decode('utf-8')):
+                ret['sr_status'] = "SFAIL"
+                cluster_nodes.remove(hostname)
+                cluster_node_info["hana_secondary"] = socket.getfqdn(hostname)
+                ret["maintenance_approval"] = False
+        
+        if len(cluster_nodes) == total_nodes:
+            cluster_node_info["diskless_node"] = socket.getfqdn(hostname)
+
+        
+        __salt__['event.send'](message_tag, {"hana_nodes": cluster_node_info})
+    else:
+        cluster_node_info["diskless_node"] = hostname
+        diskless_node_name = hostname
+        __salt__['event.send'](message_tag, {"hana_nodes": cluster_node_info})
+
+    return {"hana_nodes": cluster_node_info}
+
+
+def patch_diskless_node():
+
+    output = find_cluster_nodes()
+
+    return output
