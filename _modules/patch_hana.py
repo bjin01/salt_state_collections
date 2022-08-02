@@ -34,8 +34,8 @@ from __future__ import absolute_import, print_function, unicode_literals
 # Import python libs
 import atexit
 import logging
-import socket
-import salt.client
+
+
 
 # Import third party libs
 from salt.ext import six
@@ -344,10 +344,7 @@ def patch(target_system, **kwargs):
           patch_hana.patch:
             - name: "anything"
     '''
-
     errata_id_list = []
-    server = socket.getfqdn(socket.gethostname())
-
 
     try:
         client, key = _get_session(server)
@@ -355,71 +352,49 @@ def patch(target_system, **kwargs):
         err_msg = 'Exception raised when connecting to spacewalk server ({0}): {1}'.format(server, exc)
         log.error(err_msg)
         return {'Error': err_msg}
-
     try:
-        minion_names = client.saltkey.acceptedList(key)
-        if len(minion_names) != 0:
-            for m in minion_names:
-                if target_system in m:
-                    target_system = m
-                    log.info("------------------ to patch host: {}".format(target_system))
+        systemid = client.system.getId(key, target_system)
     except Exception as exc:  # pylint: disable=broad-except
-        err_msg = 'Exception raised trying to find host minion id ({0}): {1}'.format(server, exc)
+        err_msg = 'Exception raised when trying to get system ID ({0}): {1}'.format(server, exc)
+        log.error(err_msg)
+        return {'Error': err_msg}
+    
+    try:
+        errata_list = client.system.getRelevantErrata(key, systemid[0]['id'])
+    except Exception as exc:  # pylint: disable=broad-except
+        err_msg = 'Exception raised when trying to get all patch ID ({0}): {1}'.format(server, exc)
         log.error(err_msg)
         return {'Error': err_msg}
 
-    if target_system != "":
-        try:
-            systemid = client.system.getId(key, target_system)
-        except Exception as exc:  # pylint: disable=broad-except
-            err_msg = 'Exception raised when trying to get system ID ({0}): {1}'.format(server, exc)
-            log.error(err_msg)
-            return {'Error': err_msg}
-        
-        try:
-            errata_list = client.system.getRelevantErrata(key, systemid[0]['id'])
-        except Exception as exc:  # pylint: disable=broad-except
-            err_msg = 'Exception raised when trying to get all patch ID ({0}): {1}'.format(server, exc)
-            log.error(err_msg)
-            return {'Error': err_msg}
-
-        if errata_list and len(errata_list) > 0:
-            for x in errata_list:
-                errata_id_list.append(x['id'])
-        else:
-            info_msg = 'It looks like the system is fully patched: {0}'.format(server)
-            log.info(info_msg)
-            return {'Info': info_msg}
-
-        if 'delay' in kwargs:
-            delay = kwargs['delay']
-            nowlater = datetime.now() + timedelta(minutes=int(delay))
-        
-        if 'schedule' in kwargs:
-            schedule = kwargs['schedule']
-            nowlater = datetime.strptime(schedule, "%H:%M %d-%m-%Y")
-        
-        if not kwargs:
-            nowlater = datetime.now()
-
-        earliest_occurrence = six.moves.xmlrpc_client.DateTime(nowlater)
-        try:
-            patch_job = client.system.scheduleApplyErrata(key, int(systemid[0]['id']), errata_id_list, earliest_occurrence)
-            if patch_job:
-                local = salt.client.LocalClient()
-                local.cmd(target_system, 'event.send', ['suma/patch/job/id', {"node": target_system, "jobid": patch_job[0]}])
-                log.debug("SUMA Patch job {} created for {}".format(patch_job, target_system))
-                
-
-        except Exception as exc:  # pylint: disable=broad-except
-            err_msg = 'Exception raised when schedule patch job ({0}): {1}. Please double check if there is not already a job scheduled.'.format(server, exc)
-            log.error(err_msg)
-            return {'Error': err_msg}
-
-
-        return {"Patch Job ID is": patch_job, "event send": True}
+    if errata_list and len(errata_list) > 0:
+        for x in errata_list:
+            errata_id_list.append(x['id'])
     else:
-        return {"Patch Job ID is": "minion host not found. Check your minion host name"}
+        info_msg = 'It looks like the system is fully patched: {0}'.format(server)
+        log.info(info_msg)
+        return {'Info': info_msg}
+
+    if 'delay' in kwargs:
+        delay = kwargs['delay']
+        nowlater = datetime.now() + timedelta(minutes=int(delay))
+    
+    if 'schedule' in kwargs:
+        schedule = kwargs['schedule']
+        nowlater = datetime.strptime(schedule, "%H:%M %d-%m-%Y")
+    
+    if not kwargs:
+        nowlater = datetime.now()
+
+    earliest_occurrence = six.moves.xmlrpc_client.DateTime(nowlater)
+    try:
+        patch_job = client.system.scheduleApplyErrata(key, systemid[0]['id'], errata_id_list, earliest_occurrence)    
+    except Exception as exc:  # pylint: disable=broad-except
+        err_msg = 'Exception raised when schedule patch job ({0}): {1}. Please double check if there is not already a job scheduled.'.format(server, exc)
+        log.error(err_msg)
+        return {'Error': err_msg}
+    
+
+    return {"Patch Job ID is": patch_job}
     
 def unregister(name, server_url):
     '''

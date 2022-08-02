@@ -8,6 +8,7 @@ import socket
 import os
 import re
 
+# precheck state module call bocrm.sync_status execution module and checks if cluster current state is ok for starting a maintenance task.
 def precheck(name):
     ret = dict()
     minion_id = __salt__['grains.get']('id')
@@ -68,8 +69,21 @@ def maint_secondary(name, msl_resource):
         you can provide any name for this param.
         A required argument
     msl_resource:
-        provide the pacemaker msl resource name.
-        A required argument
+        provide the pacemaker master-slave resource name.
+        This is a required argument. e.g. msl_SAPHana_BJK_HDB00
+    
+    Usage:
+
+    .. code-block:: yaml
+
+        maint_hana-secondary:
+          crmhana.maint_secondary:
+            - name: hana
+            - msl_resource: msl_SAPHana_BJK_HDB00
+
+    :param name: a string
+    :param msl_resource: a string
+    :return: a dict with output from the execution module ``bocrm.set_msl_maintenance``
     """
     ret = {
         "name": name,

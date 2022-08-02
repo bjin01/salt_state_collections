@@ -3,7 +3,7 @@
 adsf_start_pacemaker_{{ node }}:
   runner.state.orchestrate:
     - args:
-        - mods: orchestrate.start_pacemaker_secondary_node
+        - mods: orchestrate.start_pacemaker_diskless_node
         - pillar:
             event_data: {{ data|json }}
 

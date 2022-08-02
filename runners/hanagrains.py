@@ -14,8 +14,12 @@ from salt.ext import six
 
 from datetime import datetime,  timedelta
 
+
 log = logging.getLogger(__name__)
 
+file_handler = logging.FileHandler('/tmp/saltlog.txt')
+file_handler.setLevel(logging.INFO)
+log.addHandler(file_handler)
 
 def __virtual__():
     return True
@@ -36,17 +40,19 @@ def set(hana_nodes):
             if re.search(i, line.decode('utf-8')):
                 minion_list.append(line.decode('utf-8').strip())
     
-    if len(minion_list) != 0:
-        
-        for m in minion_list:
-            #ret_grains_set = __salt__['salt.execute'](m, 'grains.append', ('hana_info', hana_nodes))
-            ret_grains_set = __salt__['salt.execute'](m, 'grains.set', ('hana_info:clusternodes', hana_nodes['cluster_nodes'], 'force=True'))
+    grains_key = None
+    log.info("minion_list {}".format(minion_list))
+    
+    for r in roles:
+        if r in hana_nodes.keys():
+            grains_key = "hana_info:{}".format(r)
+            log.info("r in hana_nodes.keys() - {}: {}".format(r, hana_nodes.keys()))
 
-            for r in roles:
-                if r in hana_nodes:
-                    grains_key = "hana_info:{}".format(r)
-                    ret_grains_set = __salt__['salt.execute'](m, 'grains.set', (grains_key, hana_nodes[r], 'force=True'))
-            print("rrrrrrrrrrrrrr roles result {}".format(ret_grains_set))
-            #__salt__['salt.execute'](m, 'grains.set', ({'hana_info': hana_nodes}))
+    if grains_key:
+        if len(minion_list) != 0:
+            for m in minion_list:
+                log.info("rrrrrrrrrrrrrr key value for {}: {} - {}".format(m, grains_key, hana_nodes[r]))
+                ret_grains_set = __salt__['salt.execute'](m, 'grains.set', (grains_key, hana_nodes[r], "force=True"))
+                time.sleep(5)
 
     return minion_list

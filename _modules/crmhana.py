@@ -8,6 +8,8 @@ import socket
 import os
 import re
 import time
+import xml.dom.minidom
+import xml.etree.ElementTree as ET
 
 __virtualname__ = 'bocrm'
 
@@ -19,223 +21,369 @@ LOGGER = logging.getLogger(__name__)
 def __virtual__():    
     return __virtualname__
 
-def _msl_status():
-    hostname = socket.gethostname()
+def _get_crm_configure_xml_info():
     ret = dict()
-    ret["maintenance_approval"] = True
-    ret['resources'] = []
-    ret["node_comment"] = []
-    ret['resource_comment'] = ""
-    cluster_nodes = []
-    master_slave_nodes = []
-    dc = ""
-
-    #First try to find the pacemaker cluster member nodes.
-    out_crm_nodes = subprocess.Popen(['crm', 'node', 'server'],
-                        stdout=subprocess.PIPE
+    try:
+        output_crm_configure = subprocess.check_output(['crm', 'configure', 'show', 'xml']
                         )
-    for line in iter(out_crm_nodes.stdout.readline, b''):
-        #create a list of found nodes.
-        cluster_nodes.append(line.decode('utf-8').rstrip())
-
-    #if no nodes found then output the message and set maintenance_approval to False and we end the func here, no need to continue.
-    if len(cluster_nodes) == 0:
-        ret['cluster nodes'] = "Error getting cluster nodes."
-        ret["comment"] = "Failed to get cluster nodes."
-        ret["maintenance_approval"] = False
+    except subprocess.CalledProcessError as e:
+        ret["crm_configure_error"] = "Error code: {}, message: {}".format(e.returncode, e.output.decode("utf-8"))
+        ret["crm_configure"] = False
         return ret
 
-    #Trying to find the master-slave resource name and add it to the dict for later usage in salt state to set the resource into maintenance or move it.
-    out_resources_xml_1 = subprocess.Popen(['crm_mon', '--exclude=all', '--include=resources', '-1', '--output-as=xml'],
-                        stdout=subprocess.PIPE
-                        )
-    
-    out_resources_xml_grep = subprocess.Popen(['grep', '-E', '<clone id=.*multi_state=\"true\"'],
-                        stdin=out_resources_xml_1.stdout,
-                        stdout=subprocess.PIPE
-                        )
+    output_string = output_crm_configure.decode("utf-8")
 
-    out_resources_xml_awk = subprocess.Popen(['awk', '{print $2}'],
-                        stdin=out_resources_xml_grep.stdout,
-                        stdout=subprocess.PIPE
-                        )
+    with open("/tmp/crm_configure_xmlout.txt","w") as myfile:
+        myfile.write(output_string)
 
-    ms_resource_name = out_resources_xml_awk.communicate()[0].decode("utf-8")
-    ms_res_name = ms_resource_name.split('=', 1)
-    ms_rs_name = ms_res_name[1].strip()
-    ret['msl_resource'] = ms_rs_name.strip('\"')
+    time.sleep(1)
+    ret["crm_configure"] = True
 
-    #next we try to get resource status in xml format and do regex search.
-    out_resources_xml = subprocess.Popen(['crm_mon', '--exclude=all', '--include=resources', '-1', '--output-as=xml'],
-                        stdout=subprocess.PIPE
+    return ret
+
+def _get_crm_mon_xml_info():
+    # this function should be called by other functions in this module and generate the crm_mon xml output and write output to a file.
+    ret = dict()
+    try:
+
+        output_crm_node = subprocess.check_output(['crm_mon', '-1', '--output-as=xml']
                         )
-    
-    #here we try to find failed or unmanaged resources which are in maintenance mode
-    seek_unmanaged_pattern = '.*managed=\"false\"'
-    seek_resources_unmanaged_patterns = [
-        '.*managed=\"false\"',
-        '.*failed=\"true\"'
+    except subprocess.CalledProcessError as e:
+        ret["crm_mon_error"] = "Error code: {}, message: {}".format(e.returncode, e.output.decode("utf-8"))
+        ret["crm_mon"] = False
+        return ret
+
+
+    output_string = output_crm_node.decode("utf-8")
+
+    with open("/tmp/xmlout.txt","w") as myfile:
+        myfile.write(output_string)
+
+    time.sleep(1)
+    ret["crm_mon"] = True
+    return ret
+
+def check_if_nodes_online():
+    # this function analyzes crm_mon xml output about node status and returns the node information.
+    ret = dict()
+    node_state_list = [
+        "standby",
+        "standby_onfail",
+        "maintenance",
+        "pending",
+        "unclean",
+        "shutdown"
     ]
 
-    for line in iter(out_resources_xml.stdout.readline, b''):
-        #loop through the output and loop through the search pattern list
-        for r in seek_resources_unmanaged_patterns:
-            if re.search(r, line.decode('utf-8')):
-                ret['resources'].append(line.decode('utf-8'))
-                ret['resource_comment'] = "resources failed or in maintenance mode."
-                ret["maintenance_approval"] = False
-                
-    #next try to identify which node is master and which node is slave in hana system replication scale-up scenario, it is easier to do parsing without xml in this case.
-    out_master_slave_nodes = subprocess.Popen(['crm_mon', '--exclude=all', '--include=resources', '-1'],
-                        stdout=subprocess.PIPE
-                        )
+    ret["online_nodes"] = []
+    ret["offline_nodes"] = []
+    ret["node_problems"] = {}
 
-    for line in iter(out_master_slave_nodes.stdout.readline, b''):
-        master_node_pattern = '.*Master.*' + hostname
-        slave_node_pattern = '.*Slave.*' + hostname
+    ret_get_crm_mon_xml_info = _get_crm_mon_xml_info()
 
-        if re.search(master_node_pattern, line.decode('utf-8')):
-            master_slave_nodes.append(hostname)
-            
-
-        if re.search(slave_node_pattern, line.decode('utf-8')):
-            master_slave_nodes.append(hostname)
-
-    #now try to identify node status, if node is online but other status e.g. failed or unmanaged is true then we set the maintenance_approval to False as well. We don't allow continue patching if node status is not 100% ready prior patching states start.
-    out_crm_node_status = subprocess.Popen(['crm_mon', '-1', '--exclude=all', '--include=nodes', '--output-as=xml'],
-                        stdout=subprocess.PIPE
-                        )
-
-    ret["Nodes"] = {}
-
+    if ret_get_crm_mon_xml_info["crm_mon"]:
+        doc = xml.dom.minidom.parse("/tmp/xmlout.txt")
     
-    for line in iter(out_crm_node_status.stdout.readline, b''):
+        nodelist = doc.documentElement
+        for child in nodelist.childNodes:
+            if child.nodeName == "nodes":
+                for n in child.childNodes:
+                    if n.nodeName == "node":
+                        if n.getAttribute("online") == "true":
+                            for l in node_state_list:
+                                if n.getAttribute(l) == "true":
+                                    ret["node_problems"][n.getAttribute("name")] = []
+                                    ret["node_problems"][n.getAttribute("name")].append(l)
+                            if n not in ret["node_problems"]:
+                                ret["online_nodes"].append(n.getAttribute("name"))
 
-        #Search if the current node is master or slave
-        
-        for c in cluster_nodes:
-            #create a list of checking node status
-            node_status_patterns = [
-                '.*standby=\"true\"',
-                '.*standby_onfail=\"true\"',
-                '.*maintenance=\"true\"',
-                '.*pending=\"true\"',
-                '.*unclean=\"true\"',
-                '.*shutdown=\"true\"',
-                '.*expected_up=\"false\"'
-            ]
-            
-            online_pattern = c.rstrip() + '.*online=\"true\".*'
+                        else:
 
-            #if a node is offline then we also need to catch as other status will be false but online state is false
-            offline_pattern = c.rstrip() + '.*online=\"false\".*'
-            
+                            if n.getAttribute("online") == "false":
+                                ret["node_problems"][n.getAttribute("name")] = "offline"
+                                ret["offline_nodes"].append(n.getAttribute("name"))
+    else:
+        __context__["retcode"] = 42
+        ret["comment"] = ret_get_crm_mon_xml_info
+        return ret
+    return ret
 
-            if re.search(online_pattern, line.decode('utf-8')):
-                
-                for n in node_status_patterns:
-                    
-                    if re.search(n, line.decode('utf-8')):
-                        
-                        ret["Nodes"][c] = "online {}".format(c)
-                        ret["node_comment"].append("{} is online but {}.".format(c,n.lstrip(".*")))
-                        ret["maintenance_approval"] = False
-                    else:
-                        ret["Nodes"][c] = "online"
+def _get_dc():
+    ret = dict()
+    ret["current_dc"] = ""
+    ret_get_crm_mon_xml_info = _get_crm_mon_xml_info()
 
-            
-            if re.search(offline_pattern, line.decode('utf-8')):
-                ret["Nodes"][c] = "offline"
-                ret["node_comment"].append("A cluster node is offline. {}".format(c))
-                ret["maintenance_approval"] = False
-
-    #here we need to find the dc node. With dc node found we can identify cluster state.
-    out_crmadmin = subprocess.Popen(['crmadmin', '-D'],
-                        stdout=subprocess.PIPE
-                        )
-    for line in iter(out_crmadmin.stdout.readline, b''):
-        if "Designated Controller is:" in line.decode('utf-8'):
-            if len(cluster_nodes) > 0:
-                
-                for n in cluster_nodes:
-                    if re.search(n, line.decode('utf-8').strip()):
-                        dc = n
-                        ret['Designated Controller'] = dc
-            else:
-                ret['Designated Controller'] = ""
-                ret["comment"] = "Designated Controller could not be found."
-                ret["maintenance_approval"] = False
-
+    if ret_get_crm_mon_xml_info["crm_mon"]:
+        doc = xml.dom.minidom.parse("/tmp/xmlout.txt")
     
-    if len(dc):
+        root = doc.documentElement
+        for child in root.childNodes:
+            if child.nodeName == "summary":
+                for n in child.childNodes:
+                    if n.nodeName == "current_dc":
+                        present = n.getAttribute("present")
+                        with_quorum = n.getAttribute("with_quorum")
+                        if present == "true" and with_quorum == "true":
+                            ret["current_dc"] = n.getAttribute("name")
+    else:
+        return ret
+    return ret
+
+def get_dc():
+    #ret = dict()
+    ret = _get_dc()
+    return ret
+
+def if_cluster_state_idle():
+
+    ret = get_dc()
+    hostname = socket.gethostname()
+    if ret["current_dc"] != "":
         #if dc is found then we do cluster state query and match if cluster state is s_idle, if not then maintenance_approval will be set to False
-        out_cluster_idle = subprocess.Popen(['crmadmin', '-q', '-S', dc.rstrip()],
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE
-                        )
+
+        try:
+            out_cluster_idle = subprocess.Popen(['crmadmin', '-q', '-S', ret["current_dc"]],
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE
+                            )
+        except:
+            ret["crmadmin_error"] = "error"
+            return ret
 
         for line in iter(out_cluster_idle.stderr.readline, b''):
             ret['clusterstate'] = line.decode('utf-8').strip()
             if ret['clusterstate'] not in "S_IDLE":
-                __salt__["grains.set"]('cluster_state_idle', False)
-                ret["dc_comment"] = "cluster state is not S_IDLE, wait until idle."
+                #__salt__["grains.set"]('cluster_state_idle', False)
+                ret["dc_comment"] = "cluster state is not S_IDLE or the host is not current_dc."
+                ret["cluster_state_idle"] = False
                 ret["maintenance_approval"] = False
                 #we end the func if cluster state is not s_idle. Then no need to further query the cluster.
                 return ret
             
             if ret['clusterstate'] in "S_IDLE":
-                __salt__["grains.set"]('cluster_state_idle', True)
+                #__salt__["grains.set"]('cluster_state_idle', True)
+                ret["cluster_state_idle"] = True
                 ret["dc_comment"] = "cluster state is in S_IDLE."
-                break
-
-    #finally we query the hana system replication status.
-    out1 = subprocess.Popen(['SAPHanaSR-showAttr'], 
-                        stdout=subprocess.PIPE,
-                        )
-    
-    if hostname in master_slave_nodes:
-
-        #the secondary node if working correctly has a score value of 2 digits and must be 4:S and SOK
-        sok_escaped = '.*[0-9]{2}.*4:S.*SOK'
-        search_pattern_sok = "^{}".format(hostname) + sok_escaped
-        
-        #the primary node if working properly has a score value of 10 digits and 4:P and PRIM
-        prim_escaped = '.*[0-9]{10}.*4:P.*PRIM'
-        search_pattern_prim = "^{}".format(hostname) + prim_escaped
-        #and if SFAIL is found we must set status to maintenance_approval = False
-        search_pattern_sfail = "^{}.*SFAIL".format(hostname)
-
-        matches = 0
-        fqdnhostname = socket.getfqdn(hostname)
-
-        for line in iter(out1.stdout.readline, b''):        
-            if re.search(search_pattern_sok, line.decode('utf-8')):
-                ret['sr_status'] = "SOK"
-                __salt__['grains.set']('hana_secondary', fqdnhostname, 'force=True')
-                
-                matches += 1
-            if re.search(search_pattern_prim, line.decode('utf-8')):
-                __salt__['grains.set']('hana_primary', fqdnhostname, 'force=True')
-                ret['sr_status'] = "PRIM"
-               
-                matches += 1
-            if re.search(search_pattern_sfail, line.decode('utf-8')):
-                ret['sr_status'] = "SFAIL"
-                ret["maintenance_approval"] = False
-                matches += 2
-
-        #the matches var is helping make sure each node in search pattern was found only one time if matches is higher then 1 then it means the node could be in prim and SOK or other wrong state, think about dual primary. So this is another insurance check.
-        if matches != 1:
-            ret['sr_status'] = "UNKNOWN"
-            ret["comment"] = "system replication status unknown."
-            ret["maintenance_approval"] = False
+                return ret
     else:
-        #and if the node was not found in the list of master slave list then we put the state to none. In diskless SBD scenario we could have more than 2 nodes in a cluster.
-        ret['sr_status'] = "None"
-        ret['diskless_node'] = True
+        ret["dc_comment"] = "{} is not current dc.".format(hostname)
+    return ret
 
-        __salt__["grains.set"]('diskless_node', True, 'force=True')
-        ret["comment"] = "This host is not a HANA host."
+def get_msl_resource_info():
+    ret = dict()
+    ret["resources"] = []
+    ret_crm_configure = _get_crm_configure_xml_info()    
+    if ret_crm_configure['crm_configure']:
+        
+        doc = ET.parse("/tmp/crm_configure_xmlout.txt")
+        root_doc = doc.getroot()
+        for child in root_doc.findall("./configuration/resources/master"):
+            
+            ret["resources"].append(child.attrib)
+        
+        for x in root_doc.findall("./configuration/resources/master/primitive"):
+            print("-----------id-----------{}".format(x.items()))
+            for a, b in x.items():
+                if a == "id":
+                    ret["resources"].append({a: b})
+
+        for x in root_doc.findall("./configuration/resources/master/primitive/instance_attributes/nvpair/[@name='SID']"):
+            for a, b in x.items():
+                if a == "value":
+                    ret["resources"].append({"SID": b})
+        
+        for x in root_doc.findall("./configuration/resources/master/primitive/instance_attributes/nvpair/[@name='InstanceNumber']"):
+            for a, b in x.items():
+                if a == "value":
+                    ret["resources"].append({"Instance": b})
+        
+        for x in root_doc.findall("./configuration/resources/master/primitive/instance_attributes/nvpair/[@name='AUTOMATED_REGISTER']"):
+            for a, b in x.items():
+                if a == "value":
+                #tempdict = {"rsc_id": x.attrib["id"]}
+                    ret["resources"].append({"AUTOMATED_REGISTER": b})
+    return ret
+
+def check_if_maintenance():
+    ret = dict()
+    ret["resources"] = []
+    ret_crm_configure = _get_crm_configure_xml_info()    
+    if ret_crm_configure['crm_configure']:
+        doc = ET.parse("/tmp/crm_configure_xmlout.txt")
+        root_doc = doc.getroot()
+        for child in root_doc.findall(".//*[@name='maintenance']"):
+            if child.attrib["value"] == "true":
+                ret["resources"].append(child.attrib)
+        
+        for child in root_doc.findall(".//*[@name='standby']"):
+            if child.attrib["value"] == "true":
+                ret["resources"].append(child.attrib)
+    
+    if len(ret["resources"]) != 0:
+        ret["comment"] = "Some resources or nodes are in maintenance or standby mode. Do not continue from here without fixing the issue first."
+        __context__["retcode"] = 42
+
+    return ret
+
+def check_sr_status():
+    ret = dict()
+    node_status = dict()
+    ret["diskless_node"] = []
+    ret["cluster_nodes"] = []
+
+    hostname = socket.gethostname()
+
+    out_crm_nodes = subprocess.Popen(['crm', 'node', 'server'],
+                        stdout=subprocess.PIPE
+                        )
+    for line in iter(out_crm_nodes.stdout.readline, b''):
+        #create a list of found nodes.
+        #cluster_nodes.append(line.decode('utf-8').rstrip())
+        ret["cluster_nodes"].append(line.decode('utf-8').rstrip())
+
+    if not _check_SAPHanaSR_showAttr():
+        ret["error_comment"] = "SAPHanaSR_showAttr is not available."
+        __context__["retcode"] = 42
+        __salt__["grains.set"]("hana_info", ret, "force=True")
+        return ret
+
+    ret_check_if_nodes_online = check_if_nodes_online()
+    if not ret_check_if_nodes_online["online_nodes"]:
+        ret["online_nodes_error"] = "No online nodes found."
+        __context__["retcode"] = 42
+        __salt__["grains.set"]("hana_info", ret, "force=True")
+        return ret
+
+    try:
+        output_saphana_showattr = subprocess.check_output(['SAPHanaSR-showAttr', '--format=script'],
+                        universal_newlines=True
+                        )
+    except subprocess.CalledProcessError as e:
+        ret["SAPHanaSR-showAttr_error"] = "Error code: {}, message: {}".format(e.returncode, e.output.decode("utf-8"))
+        ret["check_sr_status"] = False
+        return ret
+    
+    if output_saphana_showattr == "":
+        ret["no_SAPHanaSR-showAttr"] = "SAPHanaSR-showAttr output is empty. This host is not a SAP HANA host."
+        ret["diskless_node"].append(hostname)
+        __salt__["grains.set"]("hana_info", ret, "force=True")
+        return ret
+
+    ret["hana_primary"] = []
+    ret["hana_secondary"] = []
+    ret["SOK"] = False
+
+    for i in ret_check_if_nodes_online["online_nodes"]:
+        node_status[i] = []
+        primary_node_online = ""
+
+        for o in output_saphana_showattr.split('\n'):
+            # Resource/msl_SAPHana_BJK_HDB00/maintenance="false"
+            pattern = '^Resource/.*/maintenance="true"'
+            if re.search(pattern, o):
+                rsc_name = o.split("/")[1]
+                ret[rsc_name] = " in maintenance mode."
+                return ret
+            
+            pattern = "^Hosts/{}/node_state=.*online".format(i)
+            if re.search(pattern, o):
+                primary_node_online = o.split("/")[1]
+                node_status[i].append("online")
+
+            # Hosts/hana-1/roles="4:P:master1:master:worker:master"
+            pattern = "^Hosts/{}/roles=.*4:P:master1.*".format(i)
+            if re.search(pattern, o):
+                primary_node_role = o.split("/")[1]
+                node_status[i].append("4:P")
+            
+            # Hosts/hana-1/sync_state="PRIM"
+            pattern = "^Hosts/{}/sync_state=.*PRIM".format(i)
+            if re.search(pattern, o):
+                primary_node_state = o.split("/")[1]
+                node_status[i].append("PRIM")
+            
+            pattern = "^Hosts/{}/roles=.*4:S:master1.*".format(i)
+            if re.search(pattern, o):
+                primary_node_role = o.split("/")[1]
+                node_status[i].append("4:S")
+            
+            # Hosts/hana-1/sync_state="PRIM"
+            pattern = "^Hosts/{}/sync_state=.*SOK".format(i)
+            if re.search(pattern, o):
+                primary_node_state = o.split("/")[1]
+                node_status[i].append("SOK")
+
+            pattern = "^Hosts/{}/site=\"\"".format(i)
+            if re.search(pattern, o):
+                primary_node_state = o.split("/")[1]
+                node_status[i].append("no_site")
+            
+        
+        if "PRIM" in node_status[i] and "online" in node_status[i] and "4:P" in node_status[i]:
+            ret["hana_primary"].append(i)
+
+        if "SOK" in node_status[i] and "online" in node_status[i] and "4:S" in node_status[i]:
+            ret["hana_secondary"].append(i)
+            ret["SOK"] = True
+        
+        if "online" in node_status[i] and "no_site" in node_status[i]:
+            ret["diskless_node"].append(i)
+        
+    if len(ret["hana_primary"]) == 0 or len(ret["hana_primary"]) > 1:
+        ret["primary_comment"] = "primary host is having problems. Check SAPHanaSR-showAttr output."
+
+    if len(ret["hana_secondary"]) == 0 or len(ret["hana_secondary"]) > 1:
+        ret["secondary_comment"] = "secondary host is having problems. Check SAPHanaSR-showAttr output."
+    
+    __salt__["grains.set"]("hana_info", ret, "force=True")
+
+    return ret
+
+def _msl_status():
+    hostname = socket.gethostname()
+    ret = dict()
+    ret["maintenance_approval"] = True
+    ret['resources'] = []
+    ret["comments"] = []
+    
+    ret_pacemaker = __salt__['service.status']("pacemaker")
+    if not ret_pacemaker:
+        ret["comment"] = "pacemaker is not running."
+        ret["maintenance_approval"] = False
+        return ret
+
+    ret_if_cluster_state_idle = if_cluster_state_idle()
+    if not ret_if_cluster_state_idle["cluster_state_idle"]:
+        ret["if_cluster_state_idle"] = ret_if_cluster_state_idle
+        ret["maintenance_approval"] = False
+        return ret
+    
+    ret_check_if_nodes_online = check_if_nodes_online()
+    if len(ret_check_if_nodes_online["node_problems"]) != 0:
+        ret["check_if_nodes_online"] = ret_check_if_nodes_online
+        ret["maintenance_approval"] = False
+        return ret
+
+    ret_check_if_maintenance = check_if_maintenance()
+    if len(ret_check_if_maintenance["resources"]) != 0:
+        ret["check_if_maintenance"] = ret_check_if_maintenance
+        ret["maintenance_approval"] = False
+        return ret
+
+    ret_check_sr_status = check_sr_status()
+    if not ret_check_sr_status["diskless_node"] and not ret_check_sr_status["SOK"]:
+        ret["check_sr_status"] = ret_check_sr_status
+        ret["maintenance_approval"] = False
+        return ret
+
+    if ret["maintenance_approval"]:
+        ret["comments"] = [
+            "pacemaker is running - OK",
+            "cluster state is S_IDLE - OK",
+            "all member nodes are online - OK",
+            "resources and nodes are not in maintenance or standby - OK",
+            "system replication status is SOK - OK"
+        ]
     return ret
 
 def sync_status():
@@ -252,17 +400,11 @@ def sync_status():
     if not crm_ret['status']:
         return crm_ret
 
-    if not bool(__salt__['service.status']("pacemaker")):
-        ret = dict()
-        ret["comment"] = "pacemaker is not running"
-        ret["maintenance_approval"] = False
-        return ret
-    else:
-        ret = _msl_status()
-        
-        if not ret["maintenance_approval"]:
-            __context__["retcode"] = 42
-        return ret
+    ret = _msl_status()
+    
+    if not ret["maintenance_approval"]:
+        __context__["retcode"] = 42
+    return ret
 
 def pacemaker():
     return __salt__['service.status']("pacemaker")
@@ -378,7 +520,7 @@ def wait_for_cluster_idle(interval, timeout):
         
         if is_cluster_idle():
             ret['cluster_state'] = "is idle now."
-            __salt__["event.send"]('suma/pacemaker/cluster/state/idle', {"cluster_idle": True, 'node': fqdnhostname})
+            #__salt__["event.send"]('suma/pacemaker/cluster/state/idle', {"cluster_idle": True, 'node': fqdnhostname})
             __salt__["grains.set"]('cluster_state_idle', True)
 
             return True
@@ -467,7 +609,7 @@ def set_off_msl_maintenance(msl_resource_name):
     ret = dict()
     ret['msl_maintenance'] = True
 
-    if not bool(__salt__["grains.get"]('cluster_state_idle')):
+    if not is_cluster_idle():
         ret['commant'] = "Cluster state is not idle."
         __context__["retcode"] = 42
         
@@ -536,6 +678,8 @@ def off_msl_maintenance(msl_resource_name):
         ret = set_off_msl_maintenance(msl_resource_name)
         if ret['msl_maintenance']:
             __context__["retcode"] = 42
+        #find_cluster_nodes()
+        time.sleep(3)
         return ret
 
     ret['comment'] = "Something went wrong."
@@ -603,7 +747,12 @@ def stop_pacemaker():
     return ret
 
 
+#find_cluster_nodes function will search cluster nodes and identify current server roles.
 def find_cluster_nodes():
+    file_handler = logging.FileHandler('/tmp/saltlog.txt')
+    file_handler.setLevel(logging.INFO)
+    LOGGER.addHandler(file_handler)
+
     diskless_node_name = ""
     ret = dict()
     cluster_nodes = []
@@ -672,12 +821,21 @@ def find_cluster_nodes():
         
         if len(cluster_nodes) == total_nodes:
             cluster_node_info["diskless_node"] = socket.getfqdn(hostname)
-
         
+        __salt__['grains.delkey']("hana_info", 'force=True')
+        time.sleep(2)
+        
+        __salt__['grains.set']("hana_info", cluster_node_info, 'force=True')
+        time.sleep(2)
         __salt__['event.send'](message_tag, {"hana_nodes": cluster_node_info})
+        #LOGGER.info("event sent: {} - {}".format(hostname, cluster_node_info))
     else:
-        cluster_node_info["diskless_node"] = hostname
-        diskless_node_name = hostname
+        cluster_node_info["diskless_node"] = socket.getfqdn(hostname)
+        #diskless_node_name = hostname
+        __salt__['grains.delkey']("hana_info", 'force=True')
+        time.sleep(2)
+        __salt__['grains.set']("hana_info", cluster_node_info, 'force=True')
+        time.sleep(2)
         __salt__['event.send'](message_tag, {"hana_nodes": cluster_node_info})
 
     return {"hana_nodes": cluster_node_info}

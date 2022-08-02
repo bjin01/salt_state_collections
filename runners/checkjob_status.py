@@ -150,6 +150,19 @@ def jobstatus(jobid, target_system, interval=60, timeout=15):
         err_msg = 'Exception raised when connecting to spacewalk server ({0}): {1}'.format(server, exc)
         log.error(err_msg)
         return {'Error': err_msg}
+    
+    try:
+        minion_names = client.saltkey.acceptedList(key)
+        if len(minion_names) != 0:
+            for m in minion_names:
+                if target_system in m:
+                    target_system = m
+                    log.info("------------------ job running on host: {}".format(target_system))
+    except Exception as exc:  # pylint: disable=broad-except
+        err_msg = 'Exception raised trying to find host minion id ({0}): {1}'.format(server, exc)
+        log.error(err_msg)
+        return {'Error': err_msg}
+
 
     if int(timeout) >= 1:
         timeout = int(timeout) * 60
@@ -214,7 +227,9 @@ def jobstatus(jobid, target_system, interval=60, timeout=15):
                             local.cmd(target_system, 'event.send', ['suma/patch/job/finished', {"node": target_system, "reboot": True}])
                         
                         if "System reboot" in p['name']:
-                            local.cmd(target_system, 'event.send', ['suma/secondary/reboot/job/finished', {"node": target_system, "reboot": True}])
+                            role = get_node_role(target_system)
+                            message = "suma/{}/reboot/job/finished".format(role)
+                            local.cmd(target_system, 'event.send', [message, {"node": target_system, "reboot": True}])
                         return {"{}".format(jobid): "completed", "Job name": p['name']}
         
         if not jobid_exist:
@@ -224,3 +239,20 @@ def jobstatus(jobid, target_system, interval=60, timeout=15):
         time.sleep(int(interval))
 
     return {"{}".format(jobid): "Job is still running"}
+
+def get_node_role(tgt):
+    
+    pub_data = __salt__['salt.execute'](tgt, 'grains.get', arg=["hana_info"])
+    if len(pub_data) > 0:
+        for a, b in pub_data[tgt].items():
+            
+            if "diskless_node" in a and b[0] in tgt:
+                print("a: {}, b: {}".format(a,b))
+                return "diskless_node"
+            if "hana_primary" in a and b[0] in tgt:
+                return "hana_primary"
+            if "hana_secondary" in a and b[0] in tgt:
+                return "hana_secondary"
+    
+    
+    return "Unknown host"
